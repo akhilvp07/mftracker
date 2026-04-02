@@ -1,0 +1,142 @@
+{% extends "base/base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-header mb-4">
+  <h2 class="page-title"><i class="bi bi-gear me-2"></i>Settings</h2>
+</div>
+
+<div class="row g-4">
+  <!-- Database -->
+  <div class="col-lg-6">
+    <div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-database me-2"></i>Fund Database</h5>
+        {% if seed_status.status == 'done' %}
+        <span class="status-chip status-ok">Seeded</span>
+        {% else %}
+        <span class="status-chip status-warn">Not seeded</span>
+        {% endif %}
+      </div>
+      <div class="p-4">
+        {% if seed_status %}
+        <div class="settings-info-row">
+          <span>Total Funds</span><strong>{{ seed_status.total_funds|default:"—" }}</strong>
+        </div>
+        <div class="settings-info-row">
+          <span>Last Seeded</span><strong>{{ seed_status.last_seeded|default:"Never" }}</strong>
+        </div>
+        <div class="settings-info-row">
+          <span>Status</span><strong>{{ seed_status.status|capfirst }}</strong>
+        </div>
+        {% endif %}
+        <form method="post" action="" class="mt-3">
+          {% csrf_token %}
+          <button name="seed_db" class="btn mft-btn-outline w-100">
+            <i class="bi bi-cloud-download me-2"></i>Re-seed Fund Database
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Email -->
+  <div class="col-lg-6">
+    <div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-envelope me-2"></i>Email Notifications</h5>
+        {% if smtp_configured %}
+        <span class="status-chip status-ok">Configured</span>
+        {% else %}
+        <span class="status-chip status-warn">Not configured</span>
+        {% endif %}
+      </div>
+      <div class="p-4">
+        {% if smtp_configured %}
+        <p class="text-muted small">Email alerts are active. Configure via <code>.env</code> file:</p>
+        {% else %}
+        <p class="text-muted small">Email alerts are disabled. Set these in your <code>.env</code> file to enable:</p>
+        {% endif %}
+        <div class="env-snippet">
+EMAIL_HOST_USER=your@gmail.com
+EMAIL_HOST_PASSWORD=app-password
+DEFAULT_FROM_EMAIL=your@gmail.com
+        </div>
+        <p class="text-muted small mt-2">Use a <a href="https://support.google.com/accounts/answer/185833" target="_blank">Gmail App Password</a> for secure access.</p>
+        <div class="settings-info-row mt-2">
+          <span>Fallback</span><strong>In-app notifications (always active)</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Factsheets -->
+  <div class="col-lg-6">
+    <div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-file-earmark-text me-2"></i>Factsheet Refresh</h5>
+      </div>
+      <div class="p-4">
+        <div class="settings-info-row">
+          <span>Schedule</span><strong>Monthly (day {{ refresh_day|default:1 }} of each month)</strong>
+        </div>
+        <div class="settings-info-row">
+          <span>Weight Alert Threshold</span><strong>±{{ weight_threshold }}%</strong>
+        </div>
+        <form method="post" action="" class="mt-3">
+          {% csrf_token %}
+          <button name="refresh_factsheets" class="btn mft-btn-outline w-100">
+            <i class="bi bi-arrow-clockwise me-2"></i>Refresh Factsheets Now
+          </button>
+        </form>
+        {% if recent_logs %}
+        <div class="mt-3">
+          <div class="settings-sub-title">Recent Runs</div>
+          {% for log in recent_logs %}
+          <div class="log-row">
+            <span class="log-time">{{ log.started_at|date:"d M H:i" }}</span>
+            <span class="status-chip {% if log.status == 'done' %}status-ok{% elif log.status == 'partial' %}status-warn{% else %}status-err{% endif %}">
+              {{ log.status }}
+            </span>
+            <span class="log-detail">{{ log.funds_processed }} processed, {{ log.errors }} errors</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Zerodha Kite -->
+  <div class="col-lg-6">
+    <div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-plug me-2"></i>Zerodha Kite</h5>
+        {% if kite_connected %}
+        <span class="status-chip status-ok">Connected</span>
+        {% else %}
+        <span class="status-chip status-neutral">Optional</span>
+        {% endif %}
+      </div>
+      <div class="p-4">
+        <p class="text-muted small">Import your Zerodha portfolio automatically. The app works fully without this.</p>
+        {% if kite_api_key %}
+        <div class="settings-info-row">
+          <span>API Key</span><strong class="font-mono">{{ kite_api_key|slice:":8" }}...</strong>
+        </div>
+        {% if not kite_connected %}
+        <a href="https://kite.zerodha.com/connect/login?api_key={{ kite_api_key }}" class="btn mft-btn-outline w-100 mt-3" target="_blank">
+          <i class="bi bi-box-arrow-up-right me-2"></i>Connect Zerodha
+        </a>
+        {% else %}
+        <div class="mt-3 text-success"><i class="bi bi-check-circle me-1"></i>Portfolio sync active</div>
+        {% endif %}
+        {% else %}
+        <div class="env-snippet">KITE_API_KEY=your_api_key
+KITE_API_SECRET=your_secret</div>
+        <p class="text-muted small mt-2">Get credentials at <a href="https://developers.kite.trade" target="_blank">developers.kite.trade</a></p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base/base.html" %}
+{% block title %}Alerts{% endblock %}
+{% block content %}
+<div class="page-header mb-4">
+  <div>
+    <h2 class="page-title"><i class="bi bi-bell me-2"></i>Alerts & Notifications</h2>
+    <p class="text-muted">{{ unread }} unread · {{ alerts|length }} total</p>
+  </div>
+  {% if unread > 0 %}
+  <form method="post" action="/alerts/mark-all-read/">
+    {% csrf_token %}
+    <button class="btn mft-btn-outline btn-sm">
+      <i class="bi bi-check-all me-1"></i>Mark All Read
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+{% if alerts %}
+<div class="alerts-list">
+  {% for alert in alerts %}
+  <div class="alert-item {% if not alert.is_read %}alert-unread{% endif %} severity-{{ alert.severity }}">
+    <div class="alert-icon-wrap">
+      <i class="bi bi-{% if alert.severity == 'critical' %}exclamation-octagon-fill{% elif alert.severity == 'warning' %}exclamation-triangle-fill{% else %}info-circle-fill{% endif %}"></i>
+    </div>
+    <div class="alert-body">
+      <div class="alert-header-row">
+        <span class="alert-title">{{ alert.title }}</span>
+        <div class="alert-meta">
+          <span class="alert-type-badge">{{ alert.get_alert_type_display }}</span>
+          <span class="alert-time">{{ alert.created_at|timesince }} ago</span>
+          {% if alert.is_emailed %}<span title="Emailed"><i class="bi bi-envelope-check text-muted"></i></span>{% endif %}
+        </div>
+      </div>
+      <div class="alert-message">{{ alert.message }}</div>
+      {% if alert.fund %}
+      <a href="/factsheets/{{ alert.fund.pk }}/" class="alert-fund-link">
+        <i class="bi bi-arrow-right me-1"></i>{{ alert.fund.scheme_name|truncatechars:50 }}
+      </a>
+      {% endif %}
+    </div>
+    <div class="alert-actions">
+      {% if not alert.is_read %}
+      <form method="post" action="/alerts/{{ alert.pk }}/read/">
+        {% csrf_token %}
+        <button class="btn-icon-sm" title="Mark read"><i class="bi bi-check"></i></button>
+      </form>
+      {% endif %}
+      <form method="post" action="/alerts/delete/{{ alert.pk }}/" onsubmit="return confirm('Delete this alert?')">
+        {% csrf_token %}
+        <button class="btn-icon-sm text-danger" title="Delete"><i class="bi bi-trash"></i></button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state mt-5">
+  <div class="empty-icon"><i class="bi bi-bell-slash"></i></div>
+  <h5>No alerts yet</h5>
+  <p class="text-muted">Alerts will appear here when fund managers change, holdings shift, or factsheet data is updated.</p>
+</div>
+{% endif %}
+{% endblock %}

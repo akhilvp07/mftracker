@@ -1,0 +1,252 @@
+{% extends "base/base.html" %}
+{% load humanize %}
+{% block title %}Factsheet · {{ fund.scheme_name|truncatechars:30 }}{% endblock %}
+{% block content %}
+
+<div class="page-header mb-4">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mft-breadcrumb">
+        <li class="breadcrumb-item"><a href="/dashboard/">Dashboard</a></li>
+        <li class="breadcrumb-item active">Factsheet</li>
+      </ol>
+    </nav>
+    <h2 class="page-title mt-1">{{ fund.scheme_name }}</h2>
+    <div class="d-flex gap-2 flex-wrap mt-1">
+      <span class="mft-tag">{{ fund.scheme_code }}</span>
+      {% if fund.amc %}<span class="mft-tag">{{ fund.amc }}</span>{% endif %}
+      {% if fund.category %}<span class="mft-tag mft-tag-blue">{{ fund.category }}</span>{% endif %}
+    </div>
+  </div>
+  <form method="post" action="/factsheets/{{ fund.pk }}/refresh/">
+    {% csrf_token %}
+    <button class="btn mft-btn-primary btn-sm">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh Factsheet
+    </button>
+  </form>
+</div>
+
+{% if latest_diff and latest_diff.previous_month %}
+<div class="mft-card mb-4">
+  <div class="mft-card-header">
+    <h5 class="mft-card-title"><i class="bi bi-arrow-left-right me-2"></i>Month-over-Month Changes</h5>
+    <span class="mft-badge">{{ latest_diff.current_month.month|date:"M Y" }} vs {{ latest_diff.previous_month.month|date:"M Y" }}</span>
+  </div>
+  <div class="p-3">
+    {% if latest_diff.manager_changed %}
+    <div class="diff-alert diff-critical mb-2"><i class="bi bi-person-exclamation me-2"></i>Fund Manager Changed</div>
+    {% endif %}
+    {% if latest_diff.category_changed %}
+    <div class="diff-alert diff-warning mb-2"><i class="bi bi-tag me-2"></i>Fund Category Changed</div>
+    {% endif %}
+    <div class="row g-3 mt-1">
+      {% if latest_diff.new_holdings %}
+      <div class="col-md-4">
+        <div class="diff-col">
+          <div class="diff-col-title text-gain mb-2"><i class="bi bi-plus-circle-fill me-1"></i>New Holdings ({{ latest_diff.new_holdings|length }})</div>
+          {% for h in latest_diff.new_holdings %}
+          <div class="diff-item-sm"><span>{{ h.name|truncatechars:28 }}</span><span class="font-mono text-gain">+{{ h.weight|floatformat:2 }}%</span></div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% if latest_diff.exited_holdings %}
+      <div class="col-md-4">
+        <div class="diff-col">
+          <div class="diff-col-title text-loss mb-2"><i class="bi bi-dash-circle-fill me-1"></i>Exited ({{ latest_diff.exited_holdings|length }})</div>
+          {% for h in latest_diff.exited_holdings %}
+          <div class="diff-item-sm"><span>{{ h.name|truncatechars:28 }}</span><span class="font-mono text-loss">exited</span></div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% if latest_diff.weight_changes %}
+      <div class="col-md-4">
+        <div class="diff-col">
+          <div class="diff-col-title mb-2"><i class="bi bi-bar-chart-fill me-1"></i>Weight Changes</div>
+          {% for h in latest_diff.weight_changes %}
+          <div class="diff-item-sm">
+            <span>{{ h.name|truncatechars:22 }}</span>
+            <span class="font-mono {% if h.delta > 0 %}text-gain{% else %}text-loss{% endif %}">{% if h.delta > 0 %}+{% endif %}{{ h.delta|floatformat:2 }}%</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% if not latest_diff.new_holdings and not latest_diff.exited_holdings and not latest_diff.weight_changes and not latest_diff.manager_changed %}
+      <div class="col-12"><p class="text-muted mb-0"><i class="bi bi-check-circle me-1"></i>No significant changes from previous month.</p></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% for fs in factsheets %}
+<div class="mft-card mb-3">
+  <div class="mft-card-header">
+    <h5 class="mft-card-title">{{ fs.month|date:"F Y" }}</h5>
+    <div class="d-flex gap-2 align-items-center">
+      {% if fs.fetch_error and not fs.fund_manager and not fs.holdings.all %}
+        <span class="status-chip status-err"><i class="bi bi-x-circle me-1"></i>Fetch failed</span>
+      {% elif fs.holdings.all %}
+        <span class="status-chip status-ok"><i class="bi bi-check-circle me-1"></i>{{ fs.holdings.count }} holdings</span>
+      {% elif fs.fund_manager or fs.category %}
+        <span class="status-chip status-warn"><i class="bi bi-clock me-1"></i>Partial — no holdings yet</span>
+      {% else %}
+        <span class="status-chip status-neutral"><i class="bi bi-dash me-1"></i>No data</span>
+      {% endif %}
+      <span class="text-muted small">{{ fs.fetched_at|date:"d M H:i" }}</span>
+    </div>
+  </div>
+
+  <div class="p-3">
+
+    {# ── Partial/soft error notice ── #}
+    {% if fs.fetch_error %}
+    <div class="diff-alert {% if fs.holdings.all or fs.fund_manager %}diff-warning{% else %}diff-critical{% endif %} mb-3">
+      <i class="bi bi-info-circle me-2"></i>
+      {% if fs.holdings.all or fs.fund_manager %}
+        <strong>Partial data:</strong>
+      {% else %}
+        <strong>Could not fetch data:</strong>
+      {% endif %}
+      {{ fs.fetch_error }}
+      <span class="text-muted ms-2 small">— Click <em>Refresh Factsheet</em> to retry.</span>
+    </div>
+    {% endif %}
+
+    {# ── Holdings not available notice ── #}
+    {% if not fs.holdings.all and not fs.fetch_error %}
+    <div class="factsheet-notice mb-3">
+      <i class="bi bi-info-circle text-muted"></i>
+      <div>
+        <strong>Portfolio holdings not yet available.</strong><br>
+        <span class="text-muted">
+          AMFI publishes portfolio disclosures 10–15 days after each month-end.
+          The fund metadata below is from mfapi.in.
+          Click <strong>Refresh Factsheet</strong> to fetch the latest available data from AMFI.
+        </span>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="row g-3">
+
+      {# ── Fund Info column ── #}
+      <div class="col-md-{% if fs.holdings.all %}3{% else %}5{% endif %}">
+        <div class="fs-section-title mb-2">Fund Info</div>
+
+        {% if fund.amc %}
+        <div class="settings-info-row">
+          <span class="label">AMC</span>
+          <strong>{{ fund.amc }}</strong>
+        </div>
+        {% endif %}
+
+        {% if fs.fund_manager %}
+        <div class="settings-info-row">
+          <span class="label">Fund Manager</span>
+          <strong>{{ fs.fund_manager }}</strong>
+        </div>
+        {% else %}
+        <div class="settings-info-row">
+          <span class="label">Fund Manager</span>
+          <span class="text-muted fst-italic">Not available from mfapi/AMFI</span>
+        </div>
+        {% endif %}
+
+        <div class="settings-info-row">
+          <span class="label">Category</span>
+          <strong>{{ fs.category|default:fund.category|default:"—" }}</strong>
+        </div>
+
+        {% if fund.fund_type %}
+        <div class="settings-info-row">
+          <span class="label">Type</span>
+          <strong>{{ fund.fund_type }}</strong>
+        </div>
+        {% endif %}
+
+        {% if fund.current_nav %}
+        <div class="settings-info-row">
+          <span class="label">Latest NAV</span>
+          <strong class="font-mono">
+            ₹{{ fund.current_nav|floatformat:4 }}
+            {% if fund.nav_date %}<small class="text-muted fw-normal d-block">{{ fund.nav_date }}</small>{% endif %}
+          </strong>
+        </div>
+        {% endif %}
+
+        {% if fs.aum %}
+        <div class="settings-info-row">
+          <span class="label">AUM</span>
+          <strong>₹{{ fs.aum|floatformat:0|intcomma }} Cr</strong>
+        </div>
+        {% endif %}
+
+        {% if fs.expense_ratio %}
+        <div class="settings-info-row">
+          <span class="label">Expense Ratio</span>
+          <strong>{{ fs.expense_ratio|floatformat:2 }}%</strong>
+        </div>
+        {% endif %}
+      </div>
+
+      {# ── Top Holdings column ── #}
+      {% if fs.holdings.all %}
+      <div class="col-md-5">
+        <div class="fs-section-title mb-2">Top Holdings</div>
+        {% for h in fs.holdings.all|slice:":12" %}
+        <div class="diff-item-sm">
+          <span title="{{ h.stock_name }}">{{ h.stock_name|truncatechars:32 }}</span>
+          <div class="holding-bar-wrap">
+            <div class="holding-bar" style="width:{{ h.weight|floatformat:0 }}%"></div>
+            <span class="font-mono ms-1">{{ h.weight|floatformat:2 }}%</span>
+          </div>
+        </div>
+        {% endfor %}
+        {% with total=fs.holdings.count %}
+        {% if total > 12 %}
+        <div class="text-muted small mt-1">+ {{ total|add:"-12" }} more holdings</div>
+        {% endif %}
+        {% endwith %}
+      </div>
+
+      {# ── Sector Allocation column ── #}
+      {% if fs.sectors.all %}
+      <div class="col-md-4">
+        <div class="fs-section-title mb-2">Sectors</div>
+        {% for s in fs.sectors.all %}
+        <div class="diff-item-sm">
+          <span title="{{ s.sector_name }}">{{ s.sector_name|truncatechars:22 }}</span>
+          <div class="holding-bar-wrap">
+            <div class="holding-bar" style="width:{{ s.weight|floatformat:0 }}%"></div>
+            <span class="font-mono ms-1">{{ s.weight|floatformat:1 }}%</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endif %}{# end if holdings #}
+
+    </div>{# end row #}
+
+    {% if fs.objective %}
+    <div class="mt-3 factsheet-objective">
+      <strong class="text-muted small text-uppercase d-block mb-1">Objective</strong>
+      {{ fs.objective }}
+    </div>
+    {% endif %}
+
+  </div>{# end p-3 #}
+</div>
+{% empty %}
+<div class="empty-state mt-4">
+  <div class="empty-icon"><i class="bi bi-file-earmark-x"></i></div>
+  <h5>No factsheet data yet</h5>
+  <p class="text-muted">Click <strong>Refresh Factsheet</strong> above to fetch fund info and available holdings from AMFI.</p>
+</div>
+{% endfor %}
+
+{% endblock %}
+

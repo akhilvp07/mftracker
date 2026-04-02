@@ -1,0 +1,219 @@
+{% extends "base/base.html" %}
+{% block title %}Add Fund{% endblock %}
+{% block content %}
+<div class="page-header mb-4">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mft-breadcrumb">
+        <li class="breadcrumb-item"><a href="/dashboard/">Dashboard</a></li>
+        <li class="breadcrumb-item active">Add Fund</li>
+      </ol>
+    </nav>
+    <h2 class="page-title mt-1">Add Fund to Portfolio</h2>
+  </div>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="mft-card mb-2">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-search me-2"></i>Search Funds</h5>
+      </div>
+      <div class="p-4">
+        <!-- Live search input (no form submit needed) -->
+        <div class="live-search-wrap">
+          <span class="input-icon"><i class="bi bi-search"></i></span>
+          <input type="text" id="fundSearchInput" class="form-control mft-input live-search-input"
+            placeholder="Type fund name or scheme code…" autofocus autocomplete="off"
+            value="{{ query }}">
+          <span class="search-spinner" id="searchSpinner" style="display:none">
+            <span class="spinner-border spinner-border-sm"></span>
+          </span>
+        </div>
+        <p class="search-hint mt-2">Results appear as you type. Press Enter or click Search for full results.</p>
+      </div>
+    </div>
+
+    <!-- Results container — populated by JS (live) or server (fallback) -->
+    <div id="liveResults"></div>
+
+    <!-- Server-rendered fallback results (when JS loads with ?q= already set) -->
+    {% if query %}
+    <div class="mft-card" id="serverResults">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title">Results for "{{ query }}"</h5>
+        <span class="mft-badge">{{ results|length }} found</span>
+      </div>
+      {% if results %}
+      <div class="search-results" id="resultsList">
+        {% for fund in results %}
+        <div class="search-result-item">
+          <div class="search-result-info">
+            <div class="search-result-name">{{ fund.scheme_name }}</div>
+            <div class="search-result-meta">
+              <span class="fund-code">{{ fund.scheme_code }}</span>
+              {% if fund.amc %} · {{ fund.amc }}{% endif %}
+              {% if fund.current_nav %} · NAV: ₹{{ fund.current_nav }}{% endif %}
+            </div>
+          </div>
+          <form method="post" action="">
+            {% csrf_token %}
+            <input type="hidden" name="fund_id" value="{{ fund.pk }}">
+            <button type="submit" class="btn mft-btn-primary btn-sm">
+              <i class="bi bi-plus me-1"></i>Add
+            </button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state py-4">
+        <div class="empty-icon"><i class="bi bi-search"></i></div>
+        <p class="text-muted">No funds found for "{{ query }}".</p>
+        <p class="text-muted small">Make sure the fund database is seeded in <a href="/dashboard/settings/">Settings</a>.</p>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Hidden CSRF for JS-powered add forms -->
+<form id="csrfForm" style="display:none">{% csrf_token %}</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const input = document.getElementById('fundSearchInput');
+  const spinner = document.getElementById('searchSpinner');
+  const liveResults = document.getElementById('liveResults');
+  const serverResults = document.getElementById('serverResults');
+  const csrfToken = document.querySelector('#csrfForm [name=csrfmiddlewaretoken]').value;
+
+  let debounceTimer = null;
+  let lastQuery = '';
+
+  function buildResultsHTML(results, query) {
+    if (!results.length) {
+      return `<div class="mft-card"><div class="empty-state py-4">
+        <div class="empty-icon"><i class="bi bi-search"></i></div>
+        <p class="text-muted">No funds found for "${escHtml(query)}".</p>
+        <p class="text-muted small">Check that the fund database is seeded in <a href="/dashboard/settings/">Settings</a>.</p>
+      </div></div>`;
+    }
+
+    const rows = results.map(f => `
+      <div class="search-result-item">
+        <div class="search-result-info">
+          <div class="search-result-name">${escHtml(f.text)}</div>
+          <div class="search-result-meta">
+            <span class="fund-code">${f.code}</span>
+            ${f.amc ? ' · ' + escHtml(f.amc) : ''}
+          </div>
+        </div>
+        <form method="post" action="/dashboard/add-fund/" class="add-fund-form">
+          <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
+          <input type="hidden" name="fund_id" value="${f.id}">
+          <button type="submit" class="btn mft-btn-primary btn-sm">
+            <i class="bi bi-plus me-1"></i>Add
+          </button>
+        </form>
+      </div>`).join('');
+
+    return `<div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title">Results for "${escHtml(query)}"</h5>
+        <span class="mft-badge">${results.length} found</span>
+      </div>
+      <div class="search-results">${rows}</div>
+    </div>`;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  async function doSearch(q) {
+    if (q.length < 2) {
+      liveResults.innerHTML = '';
+      if (serverResults) serverResults.style.display = '';
+      return;
+    }
+    if (q === lastQuery) return;
+    lastQuery = q;
+
+    spinner.style.display = 'inline-block';
+    if (serverResults) serverResults.style.display = 'none';
+
+    try {
+      const res = await fetch(`/dashboard/api/search/?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      liveResults.innerHTML = buildResultsHTML(data.results, q);
+    } catch (e) {
+      liveResults.innerHTML = `<div class="mft-toast" data-level="error" style="margin-top:8px">
+        <i class="bi bi-exclamation-circle me-2"></i>Search failed. Please try again.
+      </div>`;
+    } finally {
+      spinner.style.display = 'none';
+    }
+  }
+
+  input.addEventListener('input', function () {
+    clearTimeout(debounceTimer);
+    const q = this.value.trim();
+    if (!q) {
+      liveResults.innerHTML = '';
+      lastQuery = '';
+      if (serverResults) serverResults.style.display = '';
+      return;
+    }
+    // Show results quickly for short queries (scheme codes), slight delay for names
+    const delay = q.length <= 6 ? 200 : 350;
+    debounceTimer = setTimeout(() => doSearch(q), delay);
+  });
+
+  // Also trigger on Enter (navigates to ?q= server page for full 20-result view)
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const q = this.value.trim();
+      if (q) window.location.href = `/dashboard/add-fund/?q=${encodeURIComponent(q)}`;
+    }
+  });
+
+  // If there's already a value (server-rendered page with ?q=), run live search on it
+  if (input.value.trim().length >= 2) {
+    doSearch(input.value.trim());
+  }
+})();
+</script>
+
+<style>
+.live-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.live-search-input {
+  padding-left: 38px !important;
+  padding-right: 44px !important;
+  font-size: 15px !important;
+  height: 46px;
+}
+.live-search-wrap .input-icon {
+  left: 12px;
+  font-size: 16px;
+  color: var(--text-muted);
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+.search-spinner {
+  position: absolute;
+  right: 14px;
+  color: var(--text-muted);
+}
+</style>
+{% endblock %}
+

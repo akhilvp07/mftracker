@@ -1,0 +1,158 @@
+{% extends "base/base.html" %}
+{% load humanize %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+{% if seed_status and seed_status.status != 'done' %}
+<div class="alert mft-toast" data-level="warning">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  Fund database not yet seeded.
+  <form method="post" action="/funds/seed/" class="d-inline ms-2">
+    {% csrf_token %}
+    <button class="btn btn-sm mft-btn-warning">Seed Now</button>
+  </form>
+</div>
+{% endif %}
+
+<!-- Summary Cards -->
+<div class="page-header mb-4">
+  <h2 class="page-title">Portfolio Dashboard</h2>
+  <div class="page-actions">
+    <form method="post" action="/dashboard/recalculate-xirr/" class="d-inline">
+      {% csrf_token %}
+      <button class="btn mft-btn-outline btn-sm"><i class="bi bi-arrow-clockwise me-1"></i>Recalc XIRR</button>
+    </form>
+    <a href="/dashboard/add-fund/" class="btn mft-btn-primary btn-sm ms-2">
+      <i class="bi bi-plus-lg me-1"></i>Add Fund
+    </a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="stat-card">
+      <div class="stat-label"><i class="bi bi-wallet2 me-1"></i>Invested</div>
+      <div class="stat-value">₹{{ total_invested|floatformat:0|intcomma }}</div>
+      <div class="stat-sub">Total cost basis</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card">
+      <div class="stat-label"><i class="bi bi-currency-rupee me-1"></i>Current Value</div>
+      <div class="stat-value">₹{{ total_current|floatformat:0|intcomma }}</div>
+      <div class="stat-sub">Market value today</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card {% if total_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
+      <div class="stat-label"><i class="bi bi-{% if total_gain >= 0 %}arrow-up{% else %}arrow-down{% endif %}-circle me-1"></i>Gain / Loss</div>
+      <div class="stat-value {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
+        {% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|floatformat:0|intcomma }}
+      </div>
+      <div class="stat-sub {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
+        {% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card {% if portfolio_xirr and portfolio_xirr >= 0 %}stat-card-gain{% endif %}">
+      <div class="stat-label"><i class="bi bi-speedometer2 me-1"></i>Portfolio XIRR</div>
+      <div class="stat-value {% if portfolio_xirr %}{% if portfolio_xirr >= 0 %}text-gain{% else %}text-loss{% endif %}{% endif %}">
+        {% if portfolio_xirr is not None %}
+          {% if portfolio_xirr >= 0 %}+{% endif %}{{ portfolio_xirr|floatformat:2 }}%
+        {% else %}
+          <span class="text-muted">—</span>
+        {% endif %}
+      </div>
+      <div class="stat-sub">Annualized return</div>
+    </div>
+  </div>
+</div>
+
+<!-- Holdings Table -->
+<div class="mft-card mb-4">
+  <div class="mft-card-header">
+    <h5 class="mft-card-title"><i class="bi bi-list-ul me-2"></i>Holdings</h5>
+    <span class="mft-badge">{{ holdings_data|length }} fund{{ holdings_data|length|pluralize }}</span>
+  </div>
+  {% if holdings_data %}
+  <div class="table-responsive">
+    <table class="table mft-table mb-0">
+      <thead>
+        <tr>
+          <th>Fund</th>
+          <th class="text-end">NAV</th>
+          <th class="text-end">Units</th>
+          <th class="text-end">Invested</th>
+          <th class="text-end">Current</th>
+          <th class="text-end">Gain/Loss</th>
+          <th class="text-end">XIRR</th>
+          <th class="text-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in holdings_data %}
+        <tr class="holding-row">
+          <td>
+            <a href="/dashboard/fund/{{ item.pf.pk }}/" class="fund-link">
+              {{ item.pf.fund.scheme_name|truncatechars:50 }}
+            </a>
+            <div class="fund-meta">
+              <span class="fund-code">{{ item.pf.fund.scheme_code }}</span>
+              {% if item.pf.fund.amc %}<span class="fund-amc">· {{ item.pf.fund.amc|truncatechars:30 }}</span>{% endif %}
+            </div>
+          </td>
+          <td class="text-end font-mono">
+            {% if item.pf.fund.current_nav %}
+              ₹{{ item.pf.fund.current_nav|floatformat:4 }}
+              {% if item.pf.fund.nav_date %}
+              <div class="nav-date">{{ item.pf.fund.nav_date }}</div>
+              {% endif %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end font-mono">{{ item.pf.total_units|floatformat:4 }}</td>
+          <td class="text-end font-mono">₹{{ item.invested|floatformat:0|intcomma }}</td>
+          <td class="text-end font-mono">₹{{ item.current|floatformat:0|intcomma }}</td>
+          <td class="text-end">
+            <span class="gain-badge {% if item.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+              {% if item.gain >= 0 %}+{% endif %}{{ item.gain_pct|floatformat:2 }}%
+            </span>
+          </td>
+          <td class="text-end">
+            {% if item.xirr is not None %}
+              <span class="xirr-val {% if item.xirr >= 0 %}text-gain{% else %}text-loss{% endif %}">
+                {% if item.xirr >= 0 %}+{% endif %}{{ item.xirr|floatformat:2 }}%
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            <div class="action-btns">
+              <a href="/dashboard/fund/{{ item.pf.pk }}/" class="btn-icon-sm" title="Details">
+                <i class="bi bi-eye"></i>
+              </a>
+              <a href="/dashboard/fund/{{ item.pf.pk }}/add-lot/" class="btn-icon-sm" title="Add lot">
+                <i class="bi bi-plus-circle"></i>
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon"><i class="bi bi-inbox"></i></div>
+    <h5>No holdings yet</h5>
+    <p class="text-muted">Add your first mutual fund to start tracking your portfolio.</p>
+    <a href="/dashboard/add-fund/" class="btn mft-btn-primary mt-2">
+      <i class="bi bi-plus-lg me-2"></i>Add Your First Fund
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

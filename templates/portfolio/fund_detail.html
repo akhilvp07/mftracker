@@ -1,0 +1,312 @@
+{% extends "base/base.html" %}
+{% load humanize %}
+{% block title %}{{ pf.fund.scheme_name|truncatechars:40 }}{% endblock %}
+{% block extra_head %}
+<style>
+  .lot-row:hover { background: var(--hover-bg); }
+</style>
+{% endblock %}
+{% block content %}
+
+<div class="page-header mb-4">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mft-breadcrumb">
+        <li class="breadcrumb-item"><a href="/dashboard/">Dashboard</a></li>
+        <li class="breadcrumb-item active">{{ pf.fund.scheme_name|truncatechars:40 }}</li>
+      </ol>
+    </nav>
+    <h2 class="page-title mt-1">{{ pf.fund.scheme_name }}</h2>
+    <div class="d-flex gap-2 flex-wrap mt-1">
+      <span class="mft-tag">Code: {{ pf.fund.scheme_code }}</span>
+      {% if pf.fund.amc %}<span class="mft-tag">{{ pf.fund.amc }}</span>{% endif %}
+      {% if pf.fund.category %}<span class="mft-tag mft-tag-blue">{{ pf.fund.category }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="page-actions">
+    <form method="post" action="/dashboard/fund/{{ pf.pk }}/refresh-nav/">
+      {% csrf_token %}
+      <button class="btn mft-btn-outline btn-sm"><i class="bi bi-arrow-clockwise me-1"></i>Refresh NAV</button>
+    </form>
+    <a href="/dashboard/fund/{{ pf.pk }}/add-lot/" class="btn mft-btn-primary btn-sm ms-2">
+      <i class="bi bi-plus me-1"></i>Add Lot
+    </a>
+    <form method="post" action="/dashboard/fund/{{ pf.pk }}/remove/" class="d-inline ms-2" onsubmit="return confirm('Remove this fund from portfolio?')">
+      {% csrf_token %}
+      <button class="btn mft-btn-danger btn-sm"><i class="bi bi-trash me-1"></i>Remove</button>
+    </form>
+  </div>
+</div>
+
+<!-- Performance Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="stat-card">
+      <div class="stat-label">Current NAV</div>
+      <div class="stat-value font-mono">
+        {% if pf.fund.current_nav %}₹{{ pf.fund.current_nav|floatformat:4 }}{% else %}<span class="text-muted">—</span>{% endif %}
+      </div>
+      <div class="stat-sub">{% if pf.fund.nav_date %}as of {{ pf.fund.nav_date }}{% endif %}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card">
+      <div class="stat-label">Total Units</div>
+      <div class="stat-value font-mono">{{ pf.total_units|floatformat:4 }}</div>
+      <div class="stat-sub">across {{ lots|length }} lot{{ lots|length|pluralize }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card {% if pf.absolute_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
+      <div class="stat-label">Gain / Loss</div>
+      <div class="stat-value {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
+        {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|floatformat:0|intcomma }}
+      </div>
+      <div class="stat-sub {% if pf.gain_pct >= 0 %}text-gain{% else %}text-loss{% endif %}">
+        {{ pf.gain_pct|floatformat:2 }}%
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card {% if xirr and xirr >= 0 %}stat-card-gain{% endif %}">
+      <div class="stat-label">XIRR</div>
+      <div class="stat-value {% if xirr %}{% if xirr >= 0 %}text-gain{% else %}text-loss{% endif %}{% endif %}">
+        {% if xirr is not None %}{% if xirr >= 0 %}+{% endif %}{{ xirr|floatformat:2 }}%{% else %}<span class="text-muted">—</span>{% endif %}
+      </div>
+      <div class="stat-sub">Annualized return</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <!-- NAV Chart -->
+  <div class="col-lg-8">
+    <div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-graph-up me-2"></i>NAV History (1Y)</h5>
+      </div>
+      <div class="chart-container" style="height:280px; padding:16px;">
+        <canvas id="navChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <!-- Investment Summary -->
+  <div class="col-lg-4">
+    <div class="mft-card h-100">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-pie-chart me-2"></i>Summary</h5>
+      </div>
+      <div class="p-3">
+        <div class="summary-row">
+          <span class="summary-label">Invested</span>
+          <span class="summary-value font-mono">₹{{ pf.total_invested|floatformat:0|intcomma }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label">Current Value</span>
+          <span class="summary-value font-mono">₹{{ pf.current_value|floatformat:0|intcomma }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label">Abs. Return</span>
+          <span class="summary-value font-mono {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
+            {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|floatformat:0|intcomma }}
+          </span>
+        </div>
+        <div class="summary-divider"></div>
+        {% if latest_factsheet %}
+        <div class="summary-row">
+          <span class="summary-label">Fund Manager</span>
+          <span class="summary-value">{{ latest_factsheet.fund_manager|default:"—" }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label">Category</span>
+          <span class="summary-value">{{ latest_factsheet.category|default:"—" }}</span>
+        </div>
+        {% if latest_factsheet.expense_ratio %}
+        <div class="summary-row">
+          <span class="summary-label">Expense Ratio</span>
+          <span class="summary-value">{{ latest_factsheet.expense_ratio|floatformat:2 }}%</span>
+        </div>
+        {% endif %}
+        {% endif %}
+        <div class="mt-3">
+          <a href="/factsheets/{{ pf.fund.pk }}/" class="btn mft-btn-outline btn-sm w-100">
+            <i class="bi bi-file-text me-1"></i>View Factsheet
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Purchase Lots -->
+<div class="mft-card mb-4">
+  <div class="mft-card-header">
+    <h5 class="mft-card-title"><i class="bi bi-receipt me-2"></i>Purchase Lots</h5>
+    <a href="/dashboard/fund/{{ pf.pk }}/add-lot/" class="btn mft-btn-primary btn-sm">
+      <i class="bi bi-plus me-1"></i>Add Lot
+    </a>
+  </div>
+  {% if lots %}
+  <div class="table-responsive">
+    <table class="table mft-table mb-0">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th class="text-end">Units</th>
+          <th class="text-end">Avg NAV</th>
+          <th class="text-end">Invested</th>
+          <th class="text-end">Current Value</th>
+          <th class="text-end">Gain</th>
+          <th>Notes</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lot in lots %}
+        <tr class="lot-row">
+          <td class="font-mono">{{ lot.purchase_date }}</td>
+          <td class="text-end font-mono">{{ lot.units|floatformat:4 }}</td>
+          <td class="text-end font-mono">₹{{ lot.avg_nav|floatformat:4 }}</td>
+          <td class="text-end font-mono">₹{{ lot.invested_amount|floatformat:0|intcomma }}</td>
+          <td class="text-end font-mono">
+            {% if pf.fund.current_nav %}
+              ₹{% widthratio lot.units 1 pf.fund.current_nav %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-end">
+            {% if pf.fund.current_nav %}
+              {% with curr=pf.fund.current_nav %}
+                {% if curr > lot.avg_nav %}
+                  <span class="text-gain">▲</span>
+                {% else %}
+                  <span class="text-loss">▼</span>
+                {% endif %}
+              {% endwith %}
+            {% endif %}
+          </td>
+          <td class="text-muted small">{{ lot.notes|default:"" }}</td>
+          <td>
+            <form method="post" action="/dashboard/lot/{{ lot.pk }}/delete/" class="d-inline" onsubmit="return confirm('Delete this lot?')">
+              {% csrf_token %}
+              <button class="btn-icon-sm text-danger" title="Delete"><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state py-4">
+    <p class="text-muted">No purchase lots added yet.</p>
+    <a href="/dashboard/fund/{{ pf.pk }}/add-lot/" class="btn mft-btn-primary btn-sm">Add First Lot</a>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Factsheet Diff -->
+{% if latest_diff %}
+<div class="mft-card mb-4">
+  <div class="mft-card-header">
+    <h5 class="mft-card-title"><i class="bi bi-arrow-left-right me-2"></i>Latest Factsheet Changes</h5>
+    <span class="mft-badge">{{ latest_diff.current_month.month|date:"M Y" }}</span>
+  </div>
+  <div class="p-3">
+    {% if latest_diff.manager_changed %}
+    <div class="diff-alert diff-critical"><i class="bi bi-person-exclamation me-2"></i>Fund manager changed</div>
+    {% endif %}
+    {% if latest_diff.category_changed %}
+    <div class="diff-alert diff-warning"><i class="bi bi-tag me-2"></i>Fund category changed</div>
+    {% endif %}
+    {% if latest_diff.new_holdings %}
+    <div class="diff-section">
+      <div class="diff-section-title text-gain"><i class="bi bi-plus-circle me-1"></i>New Holdings ({{ latest_diff.new_holdings|length }})</div>
+      {% for h in latest_diff.new_holdings|slice:":5" %}
+      <div class="diff-item"><span>{{ h.name }}</span><span class="font-mono text-gain">+{{ h.weight|floatformat:2 }}%</span></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if latest_diff.exited_holdings %}
+    <div class="diff-section">
+      <div class="diff-section-title text-loss"><i class="bi bi-dash-circle me-1"></i>Exited Holdings ({{ latest_diff.exited_holdings|length }})</div>
+      {% for h in latest_diff.exited_holdings|slice:":5" %}
+      <div class="diff-item"><span>{{ h.name }}</span><span class="font-mono text-loss">exited</span></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if latest_diff.weight_changes %}
+    <div class="diff-section">
+      <div class="diff-section-title"><i class="bi bi-bar-chart me-1"></i>Weight Changes</div>
+      {% for h in latest_diff.weight_changes|slice:":8" %}
+      <div class="diff-item">
+        <span>{{ h.name }}</span>
+        <span class="font-mono {% if h.delta > 0 %}text-gain{% else %}text-loss{% endif %}">
+          {% if h.delta > 0 %}+{% endif %}{{ h.delta|floatformat:2 }}%
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="mt-2">
+      <a href="/factsheets/{{ pf.fund.pk }}/" class="btn mft-btn-outline btn-sm">
+        <i class="bi bi-arrow-right me-1"></i>Full Factsheet View
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block extra_js %}
+<script>
+const navDates = {{ nav_dates|safe }};
+const navValues = {{ nav_values|safe }};
+if (navDates.length && navValues.length) {
+  const ctx = document.getElementById('navChart').getContext('2d');
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const textColor = isDark ? '#94a3b8' : '#64748b';
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: navDates,
+      datasets: [{
+        label: 'NAV',
+        data: navValues,
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.08)',
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `₹${ctx.parsed.y.toFixed(4)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          ticks: { color: textColor, maxTicksLimit: 8,
+            callback: (val, i) => navDates[i] ? navDates[i].slice(0,7) : '' }
+        },
+        y: {
+          grid: { color: gridColor },
+          ticks: { color: textColor, callback: v => '₹' + v.toFixed(2) }
+        }
+      }
+    }
+  });
+}
+</script>
+{% endblock %}
