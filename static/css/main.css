@@ -215,6 +215,7 @@ a:hover { color: var(--accent-hover); }
 [data-theme="dark"] .form-control, [data-theme="dark"] .form-select { background:var(--surface); border-color:var(--border); color:var(--text-primary); }
 [data-theme="dark"] .form-control:focus { background:var(--surface-2); color:var(--text-primary); border-color:var(--accent); }
 [data-theme="dark"] .input-group-text { background:var(--surface-2); border-color:var(--border); color:var(--text-muted); }
+[data-theme="dark"] .text-muted { color: var(--text-muted) !important; }
 
 ::-webkit-scrollbar { width:6px; height:6px; }
 ::-webkit-scrollbar-track { background:transparent; }

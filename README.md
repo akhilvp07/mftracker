@@ -1,16 +1,18 @@
 # MFTracker — Mutual Fund Investment Tracker
 
-A production-ready Django application for tracking mutual fund investments with XIRR calculation, factsheet comparison, and smart alerts.
+A production-ready Django application for tracking mutual fund investments with XIRR calculation, portfolio rebalancing, factsheet comparison, and smart alerts.
 
 ## Features
 
 - **Portfolio Dashboard** — Real-time NAV, invested value, gains, and XIRR per fund and overall
+- **Portfolio Rebalancing** — Smart asset allocation rebalancing with Large/Mid/Small cap targets
 - **XIRR Calculation** — Newton-Raphson via scipy, supporting multiple purchase lots per fund
 - **Factsheet Comparison** — Month-over-month diff: new/exited holdings, weight changes, sector shifts
 - **Smart Alerts** — Fund manager change, category change, objective change — persisted in DB, optional email
 - **Dark/Light Mode** — Toggle via navbar button, persisted in localStorage
 - **Scheduled Jobs** — Daily NAV refresh at 9 AM IST, monthly factsheet refresh on 1st of month
 - **Zerodha Kite** — Optional OAuth portfolio import (app works fully without it)
+- **Asset Allocation** — Set targets for Equity/Debt/Gold and Equity cap distribution (Large/Mid/Small)
 
 ---
 
@@ -92,7 +94,7 @@ If email is not configured, all alerts are stored in-app and shown as a notifica
 ## Management Commands
 
 ```bash
-# Seed/re-seed fund database from mfapi.in
+# Seed/re-seed fund database from mfapi.in (Direct Plan Growth only)
 python manage.py seed_funds
 python manage.py seed_funds --force  # Force re-seed
 
@@ -101,6 +103,9 @@ python manage.py refresh_navs
 
 # Run monthly factsheet refresh manually
 python manage.py refresh_factsheets
+
+# Cache Groww URLs for all funds (optional, improves performance)
+python manage.py cache_groww_urls
 ```
 
 ---
@@ -128,16 +133,21 @@ Static files are served via WhiteNoise (no separate nginx needed for small deplo
 
 ```
 mftracker/
-├── config/          # Django project config (settings, urls, wsgi)
-├── funds/           # MutualFund model, NAV fetching, seeding
-├── portfolio/       # Portfolio, holdings, lots, XIRR, scheduler
-├── alerts/          # Alert model, email/in-app notifications
-├── factsheets/      # Factsheet fetcher, diff engine
-├── templates/       # Django HTML templates
-├── static/          # CSS, JS
-├── .env.example     # Environment variable template
+├── config/              # Django project config (settings, urls, wsgi)
+├── funds/               # MutualFund model, NAV fetching, seeding
+├── portfolio/           # Portfolio, holdings, lots, XIRR, scheduler
+│   ├── services/        # Rebalancing logic and calculations
+│   └── migrations/      # Database migrations
+├── alerts/              # Alert model, email/in-app notifications
+├── factsheets/          # Factsheet fetcher, diff engine
+│   ├── management/      # Management commands
+│   └── templatetags/     # Template tags for Groww URLs
+├── templates/           # Django HTML templates
+├── static/              # CSS, JS
+├── .env.example         # Environment variable template
 ├── requirements.txt
 ├── Procfile
+├── KITE_API_SETUP.md    # Kite Connect API documentation
 └── README.md
 ```
 
