@@ -1,16 +1,24 @@
-import logging
+import time
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse
-from django.utils import timezone
+from django.http import JsonResponse, HttpResponse
+from django.db.models import Sum, Q, F
 from django.views.decorators.http import require_POST
+from django.utils import timezone
+from datetime import date, datetime
+import logging
+import hashlib
+
 from .models import Portfolio, PortfolioFund, PurchaseLot, XIRRCache
-from funds.models import MutualFund
-from .xirr import calculate_fund_xirr, calculate_portfolio_xirr
-from funds.services import fetch_fund_nav
-from django.conf import settings
+from funds.models import MutualFund, NAVHistory
+from factsheets.models import Factsheet, FactsheetDiff
+from .xirr import calculate_portfolio_xirr, calculate_fund_xirr
+from .services.rebalance import generate_rebalance_suggestion, get_rebalance_summary
+from funds.services import search_funds, fetch_fund_nav, seed_fund_database
+from .kite_integration import KITE_API_KEY, KITE_API_SECRET
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +120,19 @@ def add_fund(request):
 
         pf, created = PortfolioFund.objects.get_or_create(portfolio=portfolio, fund=fund)
         if created:
+            # Mark fund as active since it's now in a portfolio
+            fund.is_active = True
+            fund.save(update_fields=['is_active'])
+            
+            # Fetch detailed fund information
+            try:
+                from funds.services import fetch_fund_details
+                details = fetch_fund_details(fund.scheme_code)
+                if details:
+                    logger.info(f"Fetched detailed info for {fund.scheme_name}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch fund details: {e}")
+            
             # Auto-fetch NAV + history when fund is first added
             try:
                 fetch_fund_nav(fund, fetch_history=True)
@@ -234,10 +255,21 @@ def recalculate_xirr(request):
 @login_required
 def settings_view(request):
     from django.conf import settings as django_settings
-    kite_connected = bool(
-        Portfolio.objects.filter(user=request.user, kite_access_token__gt='').first()
-    )
+    from .models import AssetAllocation
+    from .services.rebalance import calculate_current_allocation
+    
+    portfolio, _ = Portfolio.objects.get_or_create(user=request.user)
+    kite_connected = bool(portfolio.kite_access_token)
     smtp_configured = bool(django_settings.EMAIL_HOST_USER)
+    
+    # Get or create asset allocation
+    asset_allocation, created = AssetAllocation.objects.get_or_create(portfolio=portfolio)
+    
+    # Calculate current allocation
+    current_allocation, total_value = calculate_current_allocation(portfolio)
+    
+    # Convert Decimal values to float for template
+    current_allocation_float = {k: float(v) for k, v in current_allocation.items()}
 
     if request.method == 'POST' and 'seed_db' in request.POST:
         from funds.services import seed_fund_database
@@ -256,17 +288,71 @@ def settings_view(request):
         except Exception as e:
             messages.error(request, f'Factsheet refresh failed: {e}')
         return redirect('settings')
+    
+    # Handle asset allocation form submission
+    if request.method == 'POST' and 'save_allocation' in request.POST:
+        try:
+            # Update asset allocation
+            asset_allocation.equity_percentage = Decimal(request.POST.get('equity_percentage', 60))
+            asset_allocation.debt_percentage = Decimal(request.POST.get('debt_percentage', 30))
+            asset_allocation.gold_percentage = Decimal(request.POST.get('gold_percentage', 10))
+            asset_allocation.large_cap_percentage = Decimal(request.POST.get('large_cap_percentage', 50))
+            asset_allocation.mid_cap_percentage = Decimal(request.POST.get('mid_cap_percentage', 30))
+            asset_allocation.small_cap_percentage = Decimal(request.POST.get('small_cap_percentage', 20))
+            asset_allocation.rebalance_threshold = Decimal(request.POST.get('rebalance_threshold', 5))
+            
+            asset_allocation.full_clean()
+            asset_allocation.save()
+            messages.success(request, 'Asset allocation settings saved successfully.')
+        except ValidationError as e:
+            messages.error(request, f'Error: {e}')
+        except (ValueError, KeyError):
+            messages.error(request, 'Invalid input values.')
+        return redirect('settings')
 
     from factsheets.models import FactsheetFetchLog
     recent_logs = FactsheetFetchLog.objects.order_by('-started_at')[:5]
 
     return render(request, 'portfolio/settings.html', {
+        'portfolio': portfolio,
         'kite_connected': kite_connected,
         'kite_api_key': django_settings.KITE_API_KEY,
         'smtp_configured': smtp_configured,
         'recent_logs': recent_logs,
         'weight_threshold': django_settings.WEIGHT_CHANGE_THRESHOLD,
+        'asset_allocation': asset_allocation,
+        'current_allocation': current_allocation_float,
+        'total_value': total_value,
     })
+
+
+@login_required
+def api_rebalance_progress(request):
+    """API endpoint to check rebalancing progress"""
+    task_id = request.GET.get('task_id')
+    if not task_id:
+        return JsonResponse({'error': 'No task ID provided'}, status=400)
+    
+    from django.core.cache import cache
+    
+    # Check for error
+    error = cache.get(f"task_{task_id}_error")
+    if error:
+        return JsonResponse({'error': error, 'status': 'error'})
+    
+    # Check progress
+    progress = cache.get(f"task_{task_id}_progress", 0)
+    result = cache.get(f"task_{task_id}_result")
+    
+    response = {
+        'progress': progress,
+        'status': 'completed' if progress == 100 else 'running'
+    }
+    
+    if result:
+        response['result'] = result
+    
+    return JsonResponse(response)
 
 
 @login_required
@@ -281,10 +367,127 @@ def api_fund_search(request):
             'id': f.pk,
             'text': f.scheme_name,
             'code': f.scheme_code,
-            'amc': f.amc or '',
-            'nav': str(f.current_nav) if f.current_nav else '',
+            'isin': f.isin or '',
         }
         for f in results
     ]
     return JsonResponse({'results': data})
+
+
+@login_required
+def rebalance_view(request):
+    from .models import AssetAllocation, RebalanceSuggestion
+    from .services.rebalance import generate_rebalance_suggestion, get_rebalance_summary, calculate_current_allocation
+    
+    portfolio, _ = Portfolio.objects.get_or_create(user=request.user)
+    
+    # Get current allocation
+    current_allocation, total_value = calculate_current_allocation(portfolio)
+    
+    # Convert Decimal values to float for template
+    current_allocation_float = {k: float(v) for k, v in current_allocation.items()}
+    
+    # Get latest suggestion or generate new one
+    latest_suggestion = RebalanceSuggestion.objects.filter(portfolio=portfolio).first()
+    
+    if request.method == 'POST' and 'generate_suggestion' in request.POST:
+        try:
+            # Check if this is an AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                # Generate new suggestion
+                from .tasks import generate_rebalance_suggestion_task
+                # Run the task synchronously for now, but with progress tracking
+                task_id = f"rebalance_{request.user.id}_{int(time.time())}"
+                
+                # Start the task in background (for now, run synchronously)
+                # In production, you might want to use Celery for true async processing
+                import threading
+                def run_task():
+                    generate_rebalance_suggestion_task(task_id, portfolio.id)
+                
+                thread = threading.Thread(target=run_task)
+                thread.start()
+                
+                return JsonResponse({'redirect': True, 'task_id': task_id})
+            else:
+                # Normal form submission
+                suggestion = generate_rebalance_suggestion(portfolio)
+                if suggestion:
+                    messages.success(request, 'Rebalancing suggestion generated successfully.')
+                    latest_suggestion = suggestion
+                else:
+                    messages.info(request, 'Portfolio is already balanced within the threshold. No rebalancing needed.')
+                return redirect('rebalance')
+        except Exception as e:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'error': str(e)}, status=500)
+            else:
+                messages.error(request, f'Failed to generate suggestion: {e}')
+                return redirect('rebalance')
+    
+    if request.method == 'POST' and 'mark_applied' in request.POST and latest_suggestion:
+        latest_suggestion.is_applied = True
+        latest_suggestion.save()
+        messages.success(request, 'Rebalancing marked as applied.')
+        return redirect('rebalance')
+    
+    # Get summary if suggestion exists
+    suggestion_summary = None
+    if latest_suggestion:
+        suggestion_summary = get_rebalance_summary(latest_suggestion)
+    
+    # Get asset allocation for display
+    asset_allocation, _ = AssetAllocation.objects.get_or_create(portfolio=portfolio)
+    
+    # Get all portfolio funds with their details
+    portfolio_funds = portfolio.holdings.select_related('fund').order_by('fund__scheme_name')
+    
+    return render(request, 'portfolio/rebalance.html', {
+        'portfolio': portfolio,
+        'current_allocation': current_allocation_float,
+        'total_value': total_value,
+        'asset_allocation': asset_allocation,
+        'latest_suggestion': latest_suggestion,
+        'suggestion_summary': suggestion_summary,
+        'portfolio_funds': portfolio_funds,
+    })
+
+
+@login_required
+def kite_login(request):
+    """Redirect user to Kite for authentication"""
+    from .kite_integration import initiate_kite_login
+    return initiate_kite_login(request)
+
+
+@login_required
+def kite_callback(request):
+    """Handle callback from Kite after authentication"""
+    from .kite_integration import kite_callback as handle_callback
+    return handle_callback(request)
+
+
+def kite_postback(request):
+    """Handle postbacks from Kite (order updates, etc.)"""
+    from .kite_integration import kite_postback as handle_postback
+    return handle_postback(request)
+
+
+@login_required
+def sync_kite_holdings(request):
+    """Manually sync holdings from Kite"""
+    from .kite_integration import fetch_and_sync_holdings, get_kite_session
+    
+    if not get_kite_session(request):
+        messages.error(request, 'Please connect your Kite account first.')
+        return redirect('dashboard')
+    
+    try:
+        fetch_and_sync_holdings(request)
+        messages.success(request, 'Your mutual fund holdings have been synced from Kite!')
+    except Exception as e:
+        logger.error(f"Error syncing Kite holdings: {e}")
+        messages.error(request, f'Error syncing holdings: {str(e)}')
+    
+    return redirect('dashboard')
 

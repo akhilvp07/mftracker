@@ -1,0 +1,524 @@
+{% extends "base/base.html" %}
+{% load humanize %}
+{% load indian_currency %}
+{% block title %}Rebalancing{% endblock %}
+{% block content %}
+
+<div class="page-header mb-4">
+  <h2 class="page-title"><i class="bi bi-arrow-left-right me-2"></i>Portfolio Rebalancing</h2>
+</div>
+
+{% if total_value %}
+<!-- Current vs Target Allocation -->
+<div class="row g-4 mb-4">
+  <div class="col-md-6">
+    <div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title">Current Allocation</h5>
+        <span class="small text-secondary">₹{{ total_value|indian_currency_int }}</span>
+      </div>
+      <div class="p-3">
+        <div class="row g-2 text-center mb-2">
+          <div class="col-4">
+            <div class="small text-secondary">Equity</div>
+            <div class="h4 mb-0">{{ current_allocation.equity|floatformat:1 }}%</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-secondary">Debt</div>
+            <div class="h4 mb-0">{{ current_allocation.debt|floatformat:1 }}%</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-secondary">Gold</div>
+            <div class="h4 mb-0">{{ current_allocation.gold|floatformat:1 }}%</div>
+          </div>
+        </div>
+        <div class="progress" style="height: 8px;">
+          <div class="progress-bar bg-success" style="width: {{ current_allocation.equity|floatformat:0 }}%"></div>
+          <div class="progress-bar bg-warning" style="width: {{ current_allocation.debt|floatformat:0 }}%"></div>
+          <div class="progress-bar bg-info" style="width: {{ current_allocation.gold|floatformat:0 }}%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-md-6">
+    <div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title">Target Allocation</h5>
+        <span class="small text-secondary">±{{ asset_allocation.rebalance_threshold|floatformat:0 }}% threshold</span>
+      </div>
+      <div class="p-3">
+        <div class="row g-2 text-center mb-2">
+          <div class="col-4">
+            <div class="small text-secondary">Equity</div>
+            <div class="h4 mb-0">{{ asset_allocation.equity_percentage|floatformat:0 }}%</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-secondary">Debt</div>
+            <div class="h4 mb-0">{{ asset_allocation.debt_percentage|floatformat:0 }}%</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-secondary">Gold</div>
+            <div class="h4 mb-0">{{ asset_allocation.gold_percentage|floatformat:0 }}%</div>
+          </div>
+        </div>
+        <div class="progress" style="height: 8px;">
+          <div class="progress-bar bg-success" style="width: {{ asset_allocation.equity_percentage|floatformat:0 }}%"></div>
+          <div class="progress-bar bg-warning" style="width: {{ asset_allocation.debt_percentage|floatformat:0 }}%"></div>
+          <div class="progress-bar bg-info" style="width: {{ asset_allocation.gold_percentage|floatformat:0 }}%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Generate Suggestion Button -->
+<div class="text-center mb-4">
+  <form method="post" class="d-inline-block" id="rebalance-form">
+    {% csrf_token %}
+    <button type="submit" name="generate_suggestion" class="btn mft-btn-primary btn-lg" id="generate-btn">
+      <i class="bi bi-lightning me-2"></i>Generate Rebalancing Suggestion
+    </button>
+  </form>
+</div>
+
+<!-- Progress Bar (hidden by default) -->
+<div id="rebalance-progress" class="d-none mb-4">
+  <div class="mft-card">
+    <div class="mft-card-header">
+      <h6 class="mft-card-title mb-0">
+        <i class="bi bi-hourglass-split me-2"></i>Generating Rebalancing Suggestion...
+      </h6>
+    </div>
+    <div class="p-4">
+      <div class="progress mb-3" style="height: 10px;">
+        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+             role="progressbar" style="width: 0%"></div>
+      </div>
+      <div class="d-flex justify-content-between">
+        <small id="progress-text" class="text-muted">Initializing...</small>
+        <small id="progress-percent" class="text-muted">0%</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Current Holdings with Categories -->
+{% if portfolio_funds %}
+<div class="mft-card mb-4">
+  <div class="mft-card-header">
+    <h5 class="mft-card-title">
+      <i class="bi bi-list-ul me-2"></i>Current Holdings & Categories
+    </h5>
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#holdingsCollapse">
+      <i class="bi bi-chevron-down"></i>
+    </button>
+  </div>
+  
+  <div class="collapse" id="holdingsCollapse">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover">
+        <thead class="table-light">
+          <tr>
+            <th>Fund</th>
+            <th>Category</th>
+            <th>Asset Type</th>
+            <th>Current Value</th>
+            <th>% of Portfolio</th>
+            <th>Units</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pf in portfolio_funds %}
+          <tr>
+            <td>
+              <div class="d-flex align-items-start">
+                <div>
+                  <strong>{{ pf.fund.scheme_name|truncatechars:60 }}</strong>
+                  {% if pf.fund.isin %}
+                  <br><small class="text-muted">ISIN: {{ pf.fund.isin }}</small>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="badge bg-light text-dark">{{ pf.fund.category|default:"Unknown" }}</span>
+            </td>
+            <td>
+              {% with fund_name_lower=pf.fund.scheme_name|lower %}
+              {% if pf.fund.category %}
+                {% if "Equity" in pf.fund.category or "Hybrid" in pf.fund.category or "ELSS" in pf.fund.category or "Tax Saver" in pf.fund.category or "Sectoral" in pf.fund.category or "Thematic" in pf.fund.category or "Index" in pf.fund.category %}
+                  <span class="badge bg-success">Equity</span>
+                {% elif "Debt" in pf.fund.category or "Liquid" in pf.fund.category or "Gilt" in pf.fund.category or "Duration" in pf.fund.category or "Income" in pf.fund.category %}
+                  <span class="badge bg-warning">Debt</span>
+                {% elif "Gold" in pf.fund.category or "Commodity" in pf.fund.category %}
+                  <span class="badge bg-info">Gold</span>
+                {% else %}
+                  {# Still check fund name as fallback for edge cases #}
+                  {% if "gold" in fund_name_lower or "silver" in fund_name_lower %}
+                    <span class="badge bg-info">Gold</span>
+                  {% elif "elss" in fund_name_lower or "tax saver" in fund_name_lower or "nasdaq" in fund_name_lower or "equity" in fund_name_lower or "flexi cap" in fund_name_lower or "midcap" in fund_name_lower %}
+                    <span class="badge bg-success">Equity</span>
+                  {% elif "liquid" in fund_name_lower or "debt" in fund_name_lower or "gilt" in fund_name_lower or "duration" in fund_name_lower %}
+                    <span class="badge bg-warning">Debt</span>
+                  {% else %}
+                    <span class="badge bg-secondary">{{ pf.fund.category }}</span>
+                  {% endif %}
+                {% endif %}
+              {% else %}
+                {# Fall back to checking fund name when category is empty #}
+                {% if "gold" in fund_name_lower or "silver" in fund_name_lower %}
+                  <span class="badge bg-info">Gold</span>
+                {% elif "elss" in fund_name_lower or "tax saver" in fund_name_lower %}
+                  <span class="badge bg-success">Equity</span>
+                {% elif "nasdaq" in fund_name_lower or "equity" in fund_name_lower or "flexi cap" in fund_name_lower or "midcap" in fund_name_lower %}
+                  <span class="badge bg-success">Equity</span>
+                {% elif "liquid" in fund_name_lower or "debt" in fund_name_lower or "gilt" in fund_name_lower or "duration" in fund_name_lower %}
+                  <span class="badge bg-warning">Debt</span>
+                {% else %}
+                  <span class="badge bg-secondary">Unknown</span>
+                {% endif %}
+              {% endif %}
+              {% endwith %}
+            </td>
+            <td class="font-mono">₹{{ pf.current_value|indian_currency_int }}</td>
+            <td class="font-mono">{{ pf.percentage_of_portfolio|floatformat:2 }}%</td>
+            <td class="font-mono">{{ pf.total_units|floatformat:3 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="p-3 border-top">
+      <small class="text-muted">
+        <i class="bi bi-info-circle me-1"></i>
+        Check fund categories and asset types to ensure correct classification for rebalancing.
+        Incorrect categorization may affect rebalancing suggestions.
+      </small>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Rebalancing Suggestion -->
+{% if latest_suggestion %}
+<div class="mft-card">
+  <div class="mft-card-header">
+    <h5 class="mft-card-title">
+      <i class="bi bi-list-check me-2"></i>Rebalancing Actions
+      {% if latest_suggestion.is_applied %}
+      <span class="status-chip status-ok ms-2">Applied</span>
+      {% endif %}
+    </h5>
+    <span class="small text-secondary">{{ latest_suggestion.date|date:"d M Y, H:i" }}</span>
+  </div>
+  
+  {% if suggestion_summary %}
+  <div class="p-4">
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="rebalance-summary-card sell-card">
+          <div class="rebalance-icon">
+            <i class="bi bi-arrow-down-circle"></i>
+          </div>
+          <div>
+            <div class="rebalance-label">Total to Sell</div>
+            <div class="rebalance-amount">₹{{ suggestion_summary.total_sell_amount|indian_currency_int }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="rebalance-summary-card buy-card">
+          <div class="rebalance-icon">
+            <i class="bi bi-arrow-up-circle"></i>
+          </div>
+          <div>
+            <div class="rebalance-label">Total to Buy</div>
+            <div class="rebalance-amount">₹{{ suggestion_summary.total_buy_amount|indian_currency_int }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="rebalance-summary-card neutral-card">
+          <div class="rebalance-icon">
+            <i class="bi bi-arrow-left-right"></i>
+          </div>
+          <div>
+            <div class="rebalance-label">Net Cash Flow</div>
+            <div class="rebalance-amount {% if suggestion_summary.net_amount > 0 %}text-gain{% elif suggestion_summary.net_amount < 0 %}text-loss{% endif %}">
+              {% if suggestion_summary.net_amount > 0 %}+{% endif %}₹{{ suggestion_summary.net_amount|indian_currency_int }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Action List -->
+    {% if suggestion_summary.buy_actions %}
+    <div class="mb-4">
+      <h6 class="text-success mb-3"><i class="bi bi-arrow-up-circle me-2"></i>Buy Actions</h6>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Fund</th>
+              <th>Amount</th>
+              <th>Units</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for action in suggestion_summary.buy_actions %}
+            <tr>
+              <td>{{ action.fund.scheme_name|truncatechars:50 }}</td>
+              <td class="font-mono text-gain">₹{{ action.amount|indian_currency_int }}</td>
+              <td class="font-mono">{{ action.units|floatformat:3 }}</td>
+              <td><small class="text-secondary">{{ action.reason }}</small></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    
+    {% if suggestion_summary.sell_actions %}
+    <div class="mb-4">
+      <h6 class="text-danger mb-3"><i class="bi bi-arrow-down-circle me-2"></i>Sell Actions</h6>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Fund</th>
+              <th>Amount</th>
+              <th>Units</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for action in suggestion_summary.sell_actions %}
+            <tr>
+              <td>{{ action.fund.scheme_name|truncatechars:50 }}</td>
+              <td class="font-mono text-loss">₹{{ action.amount|indian_currency_int }}</td>
+              <td class="font-mono">{{ action.units|floatformat:3 }}</td>
+              <td><small class="text-secondary">{{ action.reason }}</small></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    
+    <!-- Action Buttons -->
+    {% if not latest_suggestion.is_applied %}
+    <div class="d-flex gap-2 justify-content-end">
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" name="mark_applied" class="btn mft-btn-success">
+          <i class="bi bi-check-lg me-2"></i>Mark as Applied
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state mt-4">
+  <div class="empty-icon"><i class="bi bi-pie-chart"></i></div>
+  <h5>No Portfolio Data</h5>
+  <p class="text-secondary">Add funds to your portfolio to see rebalancing suggestions.</p>
+  <a href="{% url 'add_fund' %}" class="btn mft-btn-primary mt-2">
+    <i class="bi bi-plus-lg me-2"></i>Add Fund
+  </a>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.rebalance-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.rebalance-icon {
+  font-size: 24px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.sell-card .rebalance-icon {
+  color: var(--danger);
+  background: rgba(220, 53, 69, 0.1);
+}
+
+.buy-card .rebalance-icon {
+  color: var(--success);
+  background: rgba(25, 135, 84, 0.1);
+}
+
+.neutral-card .rebalance-icon {
+  color: var(--text-muted);
+  background: rgba(108, 117, 125, 0.1);
+}
+
+.rebalance-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rebalance-amount {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.text-gain {
+  color: var(--success) !important;
+}
+
+.text-loss {
+  color: var(--danger) !important;
+}
+
+/* Holdings collapse animation */
+.collapse {
+  transition: all 0.3s ease;
+}
+
+.mft-card-header .btn {
+  transition: transform 0.3s ease;
+}
+
+.mft-card-header .btn[aria-expanded="true"] i {
+  transform: rotate(180deg);
+}
+
+/* Badge improvements */
+.badge {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Fix for collapse text visibility */
+.collapse .table td,
+.collapse .table th {
+  color: inherit !important;
+}
+
+.collapse.show .table td,
+.collapse.show .table th {
+  color: var(--bs-body-color) !important;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const form = document.getElementById('rebalance-form');
+  const btn = document.getElementById('generate-btn');
+  const progressDiv = document.getElementById('rebalance-progress');
+  const progressBar = document.getElementById('progress-bar');
+  const progressText = document.getElementById('progress-text');
+  const progressPercent = document.getElementById('progress-percent');
+  
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      // Show progress bar
+      progressDiv.classList.remove('d-none');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Generating...';
+      
+      // Generate task ID and start progress tracking
+      const taskId = 'rebalance_' + Date.now();
+      
+      // Submit form via AJAX
+      const formData = new FormData(form);
+      formData.append('generate_suggestion', '1');
+      
+      fetch('{% url "rebalance" %}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.redirect) {
+          // Poll for progress
+          const pollProgress = () => {
+            fetch(`{% url "api_rebalance_progress" %}?task_id=${taskId}`)
+              .then(response => response.json())
+              .then(data => {
+                if (data.status === 'error') {
+                  progressText.textContent = 'Error: ' + data.error;
+                  progressBar.classList.remove('progress-bar-animated');
+                  progressBar.classList.add('bg-danger');
+                } else {
+                  progressBar.style.width = data.progress + '%';
+                  progressPercent.textContent = data.progress + '%';
+                  
+                  if (data.progress <= 30) {
+                    progressText.textContent = 'Analyzing portfolio...';
+                  } else if (data.progress <= 50) {
+                    progressText.textContent = 'Calculating allocations...';
+                  } else if (data.progress <= 80) {
+                    progressText.textContent = 'Generating suggestions...';
+                  } else if (data.progress < 100) {
+                    progressText.textContent = 'Finalizing...';
+                  } else {
+                    progressText.textContent = 'Complete!';
+                    progressBar.classList.remove('progress-bar-animated');
+                    progressBar.classList.add('bg-success');
+                    
+                    // Redirect after a short delay
+                    setTimeout(() => {
+                      window.location.reload();
+                    }, 1000);
+                  }
+                }
+                
+                if (data.status !== 'completed' && data.status !== 'error') {
+                  setTimeout(pollProgress, 500);
+                }
+              })
+              .catch(error => {
+                console.error('Error:', error);
+                progressText.textContent = 'Error checking progress';
+              });
+          };
+          
+          // Start polling
+          pollProgress();
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        progressDiv.classList.add('d-none');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-lightning me-2"></i>Generate Rebalancing Suggestion';
+      });
+    });
+  }
+});
+</script>
+{% endblock %}

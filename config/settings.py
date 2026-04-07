@@ -78,9 +78,17 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Cache configuration (for progress tracking)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'mftracker-cache',
+    }
+}
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'
@@ -129,3 +137,15 @@ if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
+
+# Kite Connect API Configuration
+# Add your API credentials here or use environment variables
+KITE_API_KEY = os.environ.get('KITE_API_KEY', '')
+KITE_API_SECRET = os.environ.get('KITE_API_SECRET', '')
+
+# CSRF Trusted Origins for ngrok
+CSRF_TRUSTED_ORIGINS = [
+    'https://hemispheric-venice-unpropagable.ngrok-free.dev',
+    'https://*.ngrok-free.dev',
+    'https://*.ngrok.io',
+]

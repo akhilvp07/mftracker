@@ -1,5 +1,6 @@
 {% extends "base/base.html" %}
 {% load humanize %}
+{% load indian_currency %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 
@@ -13,6 +14,40 @@
   </form>
 </div>
 {% endif %}
+
+<!-- Kite Integration Status -->
+<div class="mft-card mb-4">
+  <div class="mft-card-header">
+    <h5 class="mft-card-title">
+      <i class="bi bi-link-45deg me-2"></i>Kite Connect Integration
+    </h5>
+  </div>
+  <div class="mft-card-body">
+    {% if request.session.kite_access_token %}
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Connected</span>
+          <span class="text-muted ms-2">{{ request.session.kite_user_name|default:"Kite User" }}</span>
+        </div>
+        <form method="post" action="/dashboard/kite/sync/" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm mft-btn-outline">
+            <i class="bi bi-arrow-clockwise me-1"></i>Sync Holdings
+          </button>
+        </form>
+      </div>
+    {% else %}
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <span class="text-muted"><i class="bi bi-circle me-1"></i>Not connected</span>
+        </div>
+        <a href="/dashboard/kite/login/" class="btn btn-sm mft-btn-primary">
+          <i class="bi bi-box-arrow-in-right me-1"></i>Connect Kite
+        </a>
+      </div>
+    {% endif %}
+  </div>
+</div>
 
 <!-- Summary Cards -->
 <div class="page-header mb-4">
@@ -32,14 +67,14 @@
   <div class="col-6 col-lg-3">
     <div class="stat-card">
       <div class="stat-label"><i class="bi bi-wallet2 me-1"></i>Invested</div>
-      <div class="stat-value">₹{{ total_invested|floatformat:0|intcomma }}</div>
+      <div class="stat-value">₹{{ total_invested|indian_currency_int }}</div>
       <div class="stat-sub">Total cost basis</div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
     <div class="stat-card">
       <div class="stat-label"><i class="bi bi-currency-rupee me-1"></i>Current Value</div>
-      <div class="stat-value">₹{{ total_current|floatformat:0|intcomma }}</div>
+      <div class="stat-value">₹{{ total_current|indian_currency_int }}</div>
       <div class="stat-sub">Market value today</div>
     </div>
   </div>
@@ -47,7 +82,7 @@
     <div class="stat-card {% if total_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
       <div class="stat-label"><i class="bi bi-{% if total_gain >= 0 %}arrow-up{% else %}arrow-down{% endif %}-circle me-1"></i>Gain / Loss</div>
       <div class="stat-value {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
-        {% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|floatformat:0|intcomma }}
+        {% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|indian_currency_int }}
       </div>
       <div class="stat-sub {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
         {% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%
@@ -113,8 +148,8 @@
             {% endif %}
           </td>
           <td class="text-end font-mono">{{ item.pf.total_units|floatformat:4 }}</td>
-          <td class="text-end font-mono">₹{{ item.invested|floatformat:0|intcomma }}</td>
-          <td class="text-end font-mono">₹{{ item.current|floatformat:0|intcomma }}</td>
+          <td class="text-end font-mono">₹{{ item.invested|indian_currency_int }}</td>
+          <td class="text-end font-mono">₹{{ item.current|indian_currency_int }}</td>
           <td class="text-end">
             <span class="gain-badge {% if item.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
               {% if item.gain >= 0 %}+{% endif %}{{ item.gain_pct|floatformat:2 }}%

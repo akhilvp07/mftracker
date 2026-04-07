@@ -250,4 +250,5 @@ a:hover { color: var(--accent-hover); }
   border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px;
 }
 .factsheet-notice i { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+.factsheet-notice .text-secondary { color: var(--text-secondary) !important; }
 

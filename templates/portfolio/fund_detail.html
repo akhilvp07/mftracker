@@ -1,6 +1,7 @@
 {% extends "base/base.html" %}
 {% load humanize %}
-{% block title %}{{ pf.fund.scheme_name|truncatechars:40 }}{% endblock %}
+{% load indian_currency %}
+{% block title %}{{ pf.fund.scheme_name }}{% endblock %}
 {% block extra_head %}
 <style>
   .lot-row:hover { background: var(--hover-bg); }
@@ -60,7 +61,7 @@
     <div class="stat-card {% if pf.absolute_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
       <div class="stat-label">Gain / Loss</div>
       <div class="stat-value {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
-        {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|floatformat:0|intcomma }}
+        {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|indian_currency_int }}
       </div>
       <div class="stat-sub {% if pf.gain_pct >= 0 %}text-gain{% else %}text-loss{% endif %}">
         {{ pf.gain_pct|floatformat:2 }}%
@@ -99,16 +100,16 @@
       <div class="p-3">
         <div class="summary-row">
           <span class="summary-label">Invested</span>
-          <span class="summary-value font-mono">₹{{ pf.total_invested|floatformat:0|intcomma }}</span>
+          <span class="summary-value font-mono">₹{{ pf.total_invested|indian_currency_int }}</span>
         </div>
         <div class="summary-row">
           <span class="summary-label">Current Value</span>
-          <span class="summary-value font-mono">₹{{ pf.current_value|floatformat:0|intcomma }}</span>
+          <span class="summary-value font-mono">₹{{ pf.current_value|indian_currency_int }}</span>
         </div>
         <div class="summary-row">
           <span class="summary-label">Abs. Return</span>
           <span class="summary-value font-mono {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
-            {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|floatformat:0|intcomma }}
+            {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|indian_currency_int }}
           </span>
         </div>
         <div class="summary-divider"></div>
@@ -167,7 +168,7 @@
           <td class="font-mono">{{ lot.purchase_date }}</td>
           <td class="text-end font-mono">{{ lot.units|floatformat:4 }}</td>
           <td class="text-end font-mono">₹{{ lot.avg_nav|floatformat:4 }}</td>
-          <td class="text-end font-mono">₹{{ lot.invested_amount|floatformat:0|intcomma }}</td>
+          <td class="text-end font-mono">₹{{ lot.invested_amount|indian_currency_int }}</td></td>
           <td class="text-end font-mono">
             {% if pf.fund.current_nav %}
               ₹{% widthratio lot.units 1 pf.fund.current_nav %}
@@ -258,9 +259,11 @@
 
 {% endblock %}
 {% block extra_js %}
+{{ nav_dates|json_script:"nav_dates" }}
+{{ nav_values|json_script:"nav_values" }}
 <script>
-const navDates = {{ nav_dates|safe }};
-const navValues = {{ nav_values|safe }};
+const navDates = JSON.parse(document.getElementById('nav_dates').textContent);
+const navValues = JSON.parse(document.getElementById('nav_values').textContent);
 if (navDates.length && navValues.length) {
   const ctx = document.getElementById('navChart').getContext('2d');
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';

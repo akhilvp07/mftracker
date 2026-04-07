@@ -24,7 +24,8 @@ def refresh_factsheet(request, fund_id):
     fund = get_object_or_404(MutualFund, pk=fund_id)
     from .fetcher import fetch_factsheet_for_fund
     try:
-        fetch_factsheet_for_fund(fund)
+        # Use the captnemo fetcher for enriched data
+        fetch_factsheet_for_fund(fund, fetcher_name="captnemo")
         messages.success(request, f'Factsheet refreshed for {fund.scheme_name}.')
     except Exception as e:
         messages.error(request, f'Factsheet refresh failed: {e}')

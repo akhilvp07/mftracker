@@ -39,6 +39,92 @@
     </div>
   </div>
 
+  <!-- Asset Allocation -->
+  <div class="col-lg-6">
+    <div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-pie-chart me-2"></i>Asset Allocation</h5>
+        <span class="status-chip status-ok">Configured</span>
+      </div>
+      <div class="p-4">
+        <form method="post" action="">
+          {% csrf_token %}
+          <div class="mb-3">
+            <div class="settings-sub-title mb-2">Asset Classes</div>
+            <div class="row g-2">
+              <div class="col-4">
+                <label class="form-label small">Equity %</label>
+                <input type="number" class="form-control form-control-sm" name="equity_percentage" 
+                       value="{{ asset_allocation.equity_percentage|floatformat:0 }}" min="0" max="100" required>
+              </div>
+              <div class="col-4">
+                <label class="form-label small">Debt %</label>
+                <input type="number" class="form-control form-control-sm" name="debt_percentage" 
+                       value="{{ asset_allocation.debt_percentage|floatformat:0 }}" min="0" max="100" required>
+              </div>
+              <div class="col-4">
+                <label class="form-label small">Gold %</label>
+                <input type="number" class="form-control form-control-sm" name="gold_percentage" 
+                       value="{{ asset_allocation.gold_percentage|floatformat:0 }}" min="0" max="100" required>
+              </div>
+            </div>
+          </div>
+          
+          <div class="mb-3">
+            <div class="settings-sub-title mb-2">Equity Cap Allocation</div>
+            <div class="row g-2">
+              <div class="col-4">
+                <label class="form-label small">Large Cap %</label>
+                <input type="number" class="form-control form-control-sm" name="large_cap_percentage" 
+                       value="{{ asset_allocation.large_cap_percentage|floatformat:0 }}" min="0" max="100" required>
+              </div>
+              <div class="col-4">
+                <label class="form-label small">Mid Cap %</label>
+                <input type="number" class="form-control form-control-sm" name="mid_cap_percentage" 
+                       value="{{ asset_allocation.mid_cap_percentage|floatformat:0 }}" min="0" max="100" required>
+              </div>
+              <div class="col-4">
+                <label class="form-label small">Small Cap %</label>
+                <input type="number" class="form-control form-control-sm" name="small_cap_percentage" 
+                       value="{{ asset_allocation.small_cap_percentage|floatformat:0 }}" min="0" max="100" required>
+              </div>
+            </div>
+          </div>
+          
+          <div class="mb-3">
+            <label class="form-label small">Rebalance Threshold %</label>
+            <input type="number" class="form-control form-control-sm" name="rebalance_threshold" 
+                   value="{{ asset_allocation.rebalance_threshold|floatformat:0 }}" min="0" max="50" required>
+            <div class="form-text text-secondary">Trigger rebalancing when allocation deviates by this percentage</div>
+          </div>
+          
+          <button type="submit" name="save_allocation" class="btn mft-btn-primary w-100">
+            <i class="bi bi-check-lg me-2"></i>Save Allocation Settings
+          </button>
+        </form>
+        
+        {% if total_value %}
+        <hr class="my-3">
+        <div class="settings-sub-title mb-2">Current Allocation</div>
+        <div class="row g-2 text-center">
+          <div class="col-4">
+            <div class="small text-secondary">Equity</div>
+            <div class="fw-bold">{{ current_allocation.equity|floatformat:1 }}%</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-secondary">Debt</div>
+            <div class="fw-bold">{{ current_allocation.debt|floatformat:1 }}%</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-secondary">Gold</div>
+            <div class="fw-bold">{{ current_allocation.gold|floatformat:1 }}%</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
   <!-- Email -->
   <div class="col-lg-6">
     <div class="mft-card">
@@ -52,16 +138,16 @@
       </div>
       <div class="p-4">
         {% if smtp_configured %}
-        <p class="text-muted small">Email alerts are active. Configure via <code>.env</code> file:</p>
+        <p class="text-secondary small">Email alerts are active. Configure via <code>.env</code> file:</p>
         {% else %}
-        <p class="text-muted small">Email alerts are disabled. Set these in your <code>.env</code> file to enable:</p>
+        <p class="text-secondary small">Email alerts are disabled. Set these in your <code>.env</code> file to enable:</p>
         {% endif %}
         <div class="env-snippet">
 EMAIL_HOST_USER=your@gmail.com
 EMAIL_HOST_PASSWORD=app-password
 DEFAULT_FROM_EMAIL=your@gmail.com
         </div>
-        <p class="text-muted small mt-2">Use a <a href="https://support.google.com/accounts/answer/185833" target="_blank">Gmail App Password</a> for secure access.</p>
+        <p class="text-secondary small mt-2">Use a <a href="https://support.google.com/accounts/answer/185833" target="_blank">Gmail App Password</a> for secure access.</p>
         <div class="settings-info-row mt-2">
           <span>Fallback</span><strong>In-app notifications (always active)</strong>
         </div>
@@ -118,7 +204,7 @@ DEFAULT_FROM_EMAIL=your@gmail.com
         {% endif %}
       </div>
       <div class="p-4">
-        <p class="text-muted small">Import your Zerodha portfolio automatically. The app works fully without this.</p>
+        <p class="text-secondary small">Import your Zerodha portfolio automatically. The app works fully without this.</p>
         {% if kite_api_key %}
         <div class="settings-info-row">
           <span>API Key</span><strong class="font-mono">{{ kite_api_key|slice:":8" }}...</strong>
@@ -133,7 +219,7 @@ DEFAULT_FROM_EMAIL=your@gmail.com
         {% else %}
         <div class="env-snippet">KITE_API_KEY=your_api_key
 KITE_API_SECRET=your_secret</div>
-        <p class="text-muted small mt-2">Get credentials at <a href="https://developers.kite.trade" target="_blank">developers.kite.trade</a></p>
+        <p class="text-secondary small mt-2">Get credentials at <a href="https://developers.kite.trade" target="_blank">developers.kite.trade</a></p>
         {% endif %}
       </div>
     </div>

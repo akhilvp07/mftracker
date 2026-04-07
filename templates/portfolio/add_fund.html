@@ -51,9 +51,8 @@
           <div class="search-result-info">
             <div class="search-result-name">{{ fund.scheme_name }}</div>
             <div class="search-result-meta">
-              <span class="fund-code">{{ fund.scheme_code }}</span>
-              {% if fund.amc %} · {{ fund.amc }}{% endif %}
-              {% if fund.current_nav %} · NAV: ₹{{ fund.current_nav }}{% endif %}
+              <span class="fund-code">Code: {{ fund.scheme_code }}</span>
+              {% if fund.isin %} · ISIN: {{ fund.isin }}{% endif %}
             </div>
           </div>
           <form method="post" action="">
@@ -108,8 +107,8 @@
         <div class="search-result-info">
           <div class="search-result-name">${escHtml(f.text)}</div>
           <div class="search-result-meta">
-            <span class="fund-code">${f.code}</span>
-            ${f.amc ? ' · ' + escHtml(f.amc) : ''}
+            <span class="fund-code">Code: ${f.code}</span>
+            ${f.isin ? ' · ISIN: ' + escHtml(f.isin) : ''}
           </div>
         </div>
         <form method="post" action="/dashboard/add-fund/" class="add-fund-form">

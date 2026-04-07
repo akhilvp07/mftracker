@@ -34,6 +34,11 @@
           </a>
         </li>
         <li class="nav-item">
+          <a class="nav-link {% if request.resolver_match.url_name == 'rebalance' %}active{% endif %}" href="/dashboard/rebalance/">
+            <i class="bi bi-arrow-left-right me-1"></i>Rebalance
+          </a>
+        </li>
+        <li class="nav-item">
           <a class="nav-link {% if request.resolver_match.url_name == 'alerts' %}active{% endif %}" href="/alerts/">
             <i class="bi bi-bell me-1"></i>Alerts
             {% if unread_alerts_count > 0 %}

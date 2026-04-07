@@ -1,5 +1,7 @@
 {% extends "base/base.html" %}
 {% load humanize %}
+{% load indian_currency %}
+{% load groww_tags %}
 {% block title %}Factsheet · {{ fund.scheme_name|truncatechars:30 }}{% endblock %}
 {% block content %}
 
@@ -103,9 +105,9 @@
 
     {# ── Partial/soft error notice ── #}
     {% if fs.fetch_error %}
-    <div class="diff-alert {% if fs.holdings.all or fs.fund_manager %}diff-warning{% else %}diff-critical{% endif %} mb-3">
+    <div class="diff-alert {% if fs.fund_manager %}diff-warning{% else %}diff-critical{% endif %} mb-3">
       <i class="bi bi-info-circle me-2"></i>
-      {% if fs.holdings.all or fs.fund_manager %}
+      {% if fs.fund_manager %}
         <strong>Partial data:</strong>
       {% else %}
         <strong>Could not fetch data:</strong>
@@ -115,25 +117,21 @@
     </div>
     {% endif %}
 
-    {# ── Holdings not available notice ── #}
-    {% if not fs.holdings.all and not fs.fetch_error %}
+    {# ── Groww link ── #}
     <div class="factsheet-notice mb-3">
-      <i class="bi bi-info-circle text-muted"></i>
+      <i class="bi bi-box-arrow-up-right text-muted"></i>
       <div>
-        <strong>Portfolio holdings not yet available.</strong><br>
-        <span class="text-muted">
-          AMFI publishes portfolio disclosures 10–15 days after each month-end.
-          The fund metadata below is from mfapi.in.
-          Click <strong>Refresh Factsheet</strong> to fetch the latest available data from AMFI.
-        </span>
+        <strong>View on Groww</strong><br>
+        <a href="{{ fund|groww_url }}" target="_blank" class="text-secondary">
+          See detailed portfolio holdings on Groww →
+        </a>
       </div>
     </div>
-    {% endif %}
 
     <div class="row g-3">
 
       {# ── Fund Info column ── #}
-      <div class="col-md-{% if fs.holdings.all %}3{% else %}5{% endif %}">
+      <div class="col-md-5">
         <div class="fs-section-title mb-2">Fund Info</div>
 
         {% if fund.amc %}
@@ -180,7 +178,7 @@
         {% if fs.aum %}
         <div class="settings-info-row">
           <span class="label">AUM</span>
-          <strong>₹{{ fs.aum|floatformat:0|intcomma }} Cr</strong>
+          <strong>₹{{ fs.aum|indian_currency }} Cr</strong>
         </div>
         {% endif %}
 
@@ -191,43 +189,6 @@
         </div>
         {% endif %}
       </div>
-
-      {# ── Top Holdings column ── #}
-      {% if fs.holdings.all %}
-      <div class="col-md-5">
-        <div class="fs-section-title mb-2">Top Holdings</div>
-        {% for h in fs.holdings.all|slice:":12" %}
-        <div class="diff-item-sm">
-          <span title="{{ h.stock_name }}">{{ h.stock_name|truncatechars:32 }}</span>
-          <div class="holding-bar-wrap">
-            <div class="holding-bar" style="width:{{ h.weight|floatformat:0 }}%"></div>
-            <span class="font-mono ms-1">{{ h.weight|floatformat:2 }}%</span>
-          </div>
-        </div>
-        {% endfor %}
-        {% with total=fs.holdings.count %}
-        {% if total > 12 %}
-        <div class="text-muted small mt-1">+ {{ total|add:"-12" }} more holdings</div>
-        {% endif %}
-        {% endwith %}
-      </div>
-
-      {# ── Sector Allocation column ── #}
-      {% if fs.sectors.all %}
-      <div class="col-md-4">
-        <div class="fs-section-title mb-2">Sectors</div>
-        {% for s in fs.sectors.all %}
-        <div class="diff-item-sm">
-          <span title="{{ s.sector_name }}">{{ s.sector_name|truncatechars:22 }}</span>
-          <div class="holding-bar-wrap">
-            <div class="holding-bar" style="width:{{ s.weight|floatformat:0 }}%"></div>
-            <span class="font-mono ms-1">{{ s.weight|floatformat:1 }}%</span>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
-      {% endif %}{# end if holdings #}
 
     </div>{# end row #}
 
@@ -244,7 +205,7 @@
 <div class="empty-state mt-4">
   <div class="empty-icon"><i class="bi bi-file-earmark-x"></i></div>
   <h5>No factsheet data yet</h5>
-  <p class="text-muted">Click <strong>Refresh Factsheet</strong> above to fetch fund info and available holdings from AMFI.</p>
+  <p class="text-secondary">Click <strong>Refresh Factsheet</strong> above to fetch fund details from Captnemo API.</p>
 </div>
 {% endfor %}
 

@@ -1,7 +1,6 @@
 import requests
 import logging
 import json
-import io
 import time
 from django.utils import timezone
 from datetime import datetime, date
@@ -81,8 +80,8 @@ def _fetch_funds_from_amfi():
     """
     Parse the AMFI NAVAll.txt file as a fallback fund-list source.
 
-    File format (pipe-delimited):
-        Scheme Code|ISIN Div Payout/IDCW|ISIN Div Reinvestment|Scheme Name|Net Asset Value|Date
+    File format (pipe-delimited, but actually semicolon in practice):
+        Scheme Code;ISIN Div Payout/IDCW;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
 
     Section headers look like:
         Open Ended Schemes(Debt Scheme - Banking and PSU Fund)
@@ -102,7 +101,8 @@ def _fetch_funds_from_amfi():
         # Data rows are semicolon-delimited; headers/AMC names have no semicolons.
         if ";" not in line:
             # Track AMC name (ignore category sub-headers like "Open Ended Schemes(…)")
-            if not line.startswith("Open Ended") and not line.startswith("Close Ended")                     and not line.startswith("Interval") and "(" not in line:
+            if not line.startswith("Open Ended") and not line.startswith("Close Ended") \
+                    and not line.startswith("Interval") and "(" not in line:
                 current_amc = line
             continue
 
@@ -115,13 +115,47 @@ def _fetch_funds_from_amfi():
         except ValueError:
             continue  # skip any header rows that slipped through
 
+        # Extract ISIN (prefer Div Payout/IDCW ISIN)
+        isin = parts[1].strip() if len(parts) > 1 else ""
+        if isin == "-" or not isin:
+            isin = parts[2].strip() if len(parts) > 2 else ""  # Try Div Reinvestment ISIN
+            
         scheme_name = parts[3].strip()
+        
+        # Extract NAV and date if available
+        nav = None
+        nav_date = None
+        if len(parts) >= 6:
+            try:
+                nav_str = parts[4].strip()
+                if nav_str and nav_str != 'NA':
+                    nav = float(nav_str)
+                
+                date_str = parts[5].strip()
+                if date_str and date_str != 'NA':
+                    # Parse date in DD-MMM-YYYY format
+                    from datetime import datetime
+                    try:
+                        nav_date = datetime.strptime(date_str, '%d-%b-%Y').date()
+                    except:
+                        # Try other formats
+                        try:
+                            nav_date = datetime.strptime(date_str, '%d-%b-%y').date()
+                        except:
+                            pass
+            except:
+                pass
+        
         if scheme_code and scheme_name:
-            funds.append({
-                "schemeCode": scheme_code,
-                "schemeName": scheme_name,
-                "amc": current_amc,
-            })
+            # Only store Direct Plan - Growth funds to optimize memory
+            if 'direct plan' in scheme_name.lower() and 'growth' in scheme_name.lower():
+                funds.append({
+                    "schemeCode": scheme_code,
+                    "schemeName": scheme_name,
+                    "isin": isin,
+                    # Skip AMC, NAV, and other data for optimization
+                    # These will be fetched when fund is added to portfolio
+                })
 
     logger.info(f"AMFI fallback: parsed {len(funds)} funds")
     return funds
@@ -130,6 +164,7 @@ def _fetch_funds_from_amfi():
 def _bulk_upsert_funds(funds_data):
     """Upsert a list of fund dicts into MutualFund; return (created, updated)."""
     created = updated = 0
+    
     # Process in batches for speed + memory efficiency
     BATCH = 500
     for i in range(0, len(funds_data), BATCH):
@@ -145,29 +180,38 @@ def _bulk_upsert_funds(funds_data):
         for item in batch:
             code = item.get("schemeCode")
             name = (item.get("schemeName") or "").strip()
-            amc  = (item.get("amc") or "").strip()
+            isin = (item.get("isin") or "").strip()
+            
             if not code or not name:
                 continue
+                
             if code in existing:
                 obj = existing[code]
                 dirty = False
                 if obj.scheme_name != name:
                     obj.scheme_name = name
                     dirty = True
-                if amc and obj.amc != amc:
-                    obj.amc = amc
+                if isin and not obj.isin:
+                    obj.isin = isin
                     dirty = True
+                # Don't change is_active status on update
                 if dirty:
                     to_update.append(obj)
                 updated += 1
             else:
-                to_create.append(MutualFund(scheme_code=code, scheme_name=name, amc=amc))
+                # New funds start as inactive - store only essential data
+                to_create.append(MutualFund(
+                    scheme_code=code,
+                    scheme_name=name,
+                    isin=isin,
+                    is_active=False
+                ))
                 created += 1
 
         if to_create:
             MutualFund.objects.bulk_create(to_create, ignore_conflicts=True)
         if to_update:
-            MutualFund.objects.bulk_update(to_update, ["scheme_name", "amc"])
+            MutualFund.objects.bulk_update(to_update, ["scheme_name", "isin"])
 
     return created, updated
 
@@ -180,8 +224,8 @@ def seed_fund_database(force=False):
     """Seed local DB with full AMFI fund list.
 
     Strategy:
-      1. Try mfapi.in (with retry + stream).
-      2. If that fails, fall back to AMFI NAVAll.txt.
+      1. Try AMFI NAVAll.txt (primary - more reliable).
+      2. If that fails, fall back to mfapi.in.
     """
     status, _ = SeedStatus.objects.get_or_create(pk=1)
     if status.status == 'done' and not force:
@@ -193,22 +237,23 @@ def seed_fund_database(force=False):
     status.save()
 
     funds_data = None
-    source_used = "mfapi"
+    source_used = "amfi"
 
-    # --- Primary: mfapi.in ---
+    # --- Primary: AMFI NAVAll.txt ---
     try:
-        funds_data = _fetch_funds_from_mfapi()
-        logger.info(f"mfapi.in returned {len(funds_data)} fund records")
+        funds_data = _fetch_funds_from_amfi()
+        logger.info(f"AMFI returned {len(funds_data)} fund records")
     except Exception as exc:
-        logger.warning(f"mfapi.in seed failed after retries: {exc}. Trying AMFI fallback…")
+        logger.warning(f"AMFI seed failed: {exc}. Trying mfapi.in fallback…")
 
-    # --- Fallback: AMFI NAVAll.txt ---
+    # --- Fallback: mfapi.in ---
     if not funds_data:
         try:
-            funds_data = _fetch_funds_from_amfi()
-            source_used = "amfi"
+            funds_data = _fetch_funds_from_mfapi()
+            source_used = "mfapi"
+            logger.info(f"mfapi.in returned {len(funds_data)} fund records")
         except Exception as exc:
-            msg = f"Both mfapi.in and AMFI fallback failed: {exc}"
+            msg = f"Both AMFI and mfapi.in fallback failed: {exc}"
             logger.error(msg)
             status.status = 'failed'
             status.error_message = msg
@@ -314,13 +359,161 @@ def refresh_all_navs():
     return success, errors
 
 
+def fetch_fund_details(scheme_code):
+    """
+    Fetch detailed fund information when a fund is added to portfolio.
+    This fetches additional data beyond the basic search info.
+    
+    Args:
+        scheme_code: The scheme code of the fund
+        
+    Returns:
+        dict: Detailed fund information or None if failed
+    """
+    from .models import MutualFund
+    
+    try:
+        # Try mfapi.in first for detailed info
+        url = f"https://api.mfapi.in/mf/{scheme_code}"
+        response = _fetch_with_retry(url)
+        data = json.loads(response)
+        
+        if data.get('status') == 'success' and 'data' in data:
+            fund_data = data['data']
+            
+            # Update the fund in database with detailed info
+            fund = MutualFund.objects.get(scheme_code=scheme_code)
+            
+            # Update fields that are available
+            if 'amc' in fund_data:
+                fund.amc = fund_data['amc'].get('name', '')
+            if 'schemeCategory' in fund_data:
+                fund.fund_category = fund_data['schemeCategory']
+            if 'schemeType' in fund_data:
+                fund.fund_type = fund_data['schemeType']
+            if 'plan' in fund_data:
+                fund.plan = fund_data['plan']
+            if 'fundManager' in fund_data:
+                fund.fund_manager = fund_data['fundManager']
+            if 'expenseRatio' in fund_data:
+                try:
+                    fund.expense_ratio = float(fund_data['expenseRatio'])
+                except:
+                    pass
+            
+            fund.save(update_fields=[
+                'amc', 'fund_category', 'fund_type', 'plan',
+                'fund_manager', 'expense_ratio'
+            ])
+            
+            return fund_data
+            
+    except Exception as e:
+        logger.warning(f"Failed to fetch details for scheme {scheme_code} from mfapi.in: {e}")
+    
+    # Fallback: try to get from AMFI NAV data for basic info
+    try:
+        url = f"https://api.mfapi.in/mf/{scheme_code}"
+        response = _fetch_with_retry(url)
+        data = json.loads(response)
+        
+        if data.get('status') == 'success' and 'data' in data:
+            fund_data = data['data']
+            fund = MutualFund.objects.get(scheme_code=scheme_code)
+            
+            # Update basic NAV info
+            if 'nav' in fund_data:
+                try:
+                    fund.current_nav = float(fund_data['nav'])
+                except:
+                    pass
+            if 'date' in fund_data:
+                from datetime import datetime
+                try:
+                    fund.nav_date = datetime.strptime(fund_data['date'], '%d-%b-%Y').date()
+                except:
+                    pass
+            
+            fund.save(update_fields=['current_nav', 'nav_date'])
+            return fund_data
+            
+    except Exception as e:
+        logger.error(f"Failed to fetch any details for scheme {scheme_code}: {e}")
+    
+    return None
+
+
 def search_funds(query, limit=20):
-    """Search funds by name or scheme code."""
+    """Search funds by name or scheme code with improved matching."""
     from django.db.models import Q
-    qs = MutualFund.objects.filter(is_active=True)
+    import re
+    
+    # Search all funds, not just active ones, so users can find and add funds
+    qs = MutualFund.objects.all()
+    
     if query.isdigit():
         qs = qs.filter(Q(scheme_code=int(query)) | Q(scheme_name__icontains=query))
     else:
-        for word in query.split():
-            qs = qs.filter(scheme_name__icontains=word)
-    return qs[:limit]
+        # Create variations for better matching
+        variations = []
+        
+        # Original query
+        variations.append(query)
+        
+        # Handle common variations
+        # 'smallcap' -> 'small cap'
+        if 'smallcap' in query.lower():
+            variations.append(query.lower().replace('smallcap', 'small cap'))
+        # 'small cap' -> 'smallcap'
+        if 'small cap' in query.lower():
+            variations.append(query.lower().replace('small cap', 'smallcap'))
+        # 'midcap' -> 'mid cap'
+        if 'midcap' in query.lower():
+            variations.append(query.lower().replace('midcap', 'mid cap'))
+        # 'mid cap' -> 'midcap'
+        if 'mid cap' in query.lower():
+            variations.append(query.lower().replace('mid cap', 'midcap'))
+        # 'largecap' -> 'large cap'
+        if 'largecap' in query.lower():
+            variations.append(query.lower().replace('largecap', 'large cap'))
+        # 'large cap' -> 'largecap'
+        if 'large cap' in query.lower():
+            variations.append(query.lower().replace('large cap', 'largecap'))
+        # 'bluechip' -> 'blue chip'
+        if 'bluechip' in query.lower():
+            variations.append(query.lower().replace('bluechip', 'blue chip'))
+        # 'blue chip' -> 'bluechip'
+        if 'blue chip' in query.lower():
+            variations.append(query.lower().replace('blue chip', 'bluechip'))
+        # 'equity' -> 'eq' (common abbreviation)
+        if 'equity' in query.lower():
+            variations.append(query.lower().replace('equity', 'eq'))
+        # Note: Removed 'direct plan' variations since all funds are direct plans now
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_variations = []
+        for v in variations:
+            if v not in seen:
+                seen.add(v)
+                unique_variations.append(v)
+        
+        # Build Q objects for all variations
+        q_objects = Q()
+        for variation in unique_variations:
+            # For each variation, search for all words
+            words = variation.split()
+            word_q = Q()
+            for word in words:
+                word_q &= Q(scheme_name__icontains=word)
+            q_objects |= word_q
+        
+        qs = qs.filter(q_objects)
+    
+    results = list(qs[:limit])
+    
+    # If we have fewer results than limit and user might be looking for non-direct plans,
+    # we could fetch on-demand here in the future
+    # For now, just return what we have
+    
+    return results

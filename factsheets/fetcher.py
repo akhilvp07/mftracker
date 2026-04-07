@@ -53,6 +53,10 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+# Import base classes
+from .fetcher_base import FactsheetFetcher, FetchError
+from .fetcher_captnemo import CaptnemoFetcher
+
 MFAPI_BASE   = "https://api.mfapi.in/mf"
 AMFI_PORTAL  = "https://www.amfiindia.com"
 
@@ -72,9 +76,8 @@ HEADERS = {
 # ─────────────────────────────────────────────────────────────────────────────
 # HTTP helpers
 # ─────────────────────────────────────────────────────────────────────────────
-
-class FetchError(Exception):
-    pass
+# Helper functions
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _http_get(url, *, retries=3, timeout=20, as_text=False):
@@ -372,11 +375,6 @@ def _fetch_fund_manager_from_amfi_scheme_page(fund):
 # Fetcher classes (pluggable registry)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class FactsheetFetcher:
-    def fetch(self, fund, month: date) -> dict:
-        raise NotImplementedError
-
-
 class MFAPIFetcher(FactsheetFetcher):
     """
     Primary fetcher:
@@ -409,15 +407,13 @@ class MFAPIFetcher(FactsheetFetcher):
             result["errors"].append(f"mfapi: {exc}")
             logger.warning(f"mfapi meta failed for {fund.scheme_code}: {exc}")
 
-        # 2 ── AMFI portfolio page (fund manager + holdings)
+        # 2 ── AMFI portfolio page (fund manager only - holdings not displayed)
         try:
-            fund_manager, holdings, sectors_dict = _fetch_amfi_portfolio_page(fund.scheme_code)
+            fund_manager, _, _ = _fetch_amfi_portfolio_page(fund.scheme_code)
             result["fund_manager"] = fund_manager
-            result["holdings"]     = holdings
-            result["sectors"]      = [
-                {"name": k, "weight": v}
-                for k, v in sorted(sectors_dict.items(), key=lambda x: x[1], reverse=True)
-            ]
+            # Holdings and sectors are not being displayed anymore
+            result["holdings"] = []
+            result["sectors"] = []
         except FetchError as exc:
             result["errors"].append(f"amfi_portfolio: {exc}")
             logger.warning(f"AMFI portfolio failed for {fund.scheme_code}: {exc}")
@@ -443,13 +439,11 @@ class AMFIFetcher(FactsheetFetcher):
             "errors": [],
         }
         try:
-            fund_manager, holdings, sectors_dict = _fetch_amfi_portfolio_page(fund.scheme_code)
+            fund_manager, _, _ = _fetch_amfi_portfolio_page(fund.scheme_code)
             result["fund_manager"] = fund_manager
-            result["holdings"]     = holdings
-            result["sectors"]      = [
-                {"name": k, "weight": v}
-                for k, v in sorted(sectors_dict.items(), key=lambda x: x[1], reverse=True)
-            ]
+            # Holdings and sectors are not being displayed anymore
+            result["holdings"] = []
+            result["sectors"] = []
         except FetchError as exc:
             result["errors"].append(str(exc))
         return result
@@ -458,6 +452,7 @@ class AMFIFetcher(FactsheetFetcher):
 _FETCHER_REGISTRY = {
     "mfapi": MFAPIFetcher,
     "amfi":  AMFIFetcher,
+    "captnemo": CaptnemoFetcher,
 }
 
 
@@ -511,26 +506,9 @@ def fetch_factsheet_for_fund(fund, month=None, fetcher_name="mfapi"):
         },
     )
 
-    if data.get("holdings"):
-        FactsheetHolding.objects.filter(factsheet=factsheet).delete()
-        FactsheetHolding.objects.bulk_create([
-            FactsheetHolding(
-                factsheet=factsheet,
-                stock_name=h["name"],
-                isin=h.get("isin", ""),
-                weight=h["weight"],
-                sector=h.get("sector", ""),
-            )
-            for h in data["holdings"]
-        ])
-
-    if data.get("sectors"):
-        SectorAllocation.objects.filter(factsheet=factsheet).delete()
-        SectorAllocation.objects.bulk_create([
-            SectorAllocation(factsheet=factsheet, sector_name=s["name"], weight=s["weight"])
-            for s in data["sectors"]
-        ])
-
+    # Skip holdings and sectors as they're not displayed in the dashboard
+    # This also avoids AMFI dependency issues
+    
     _generate_diff(fund, factsheet)
     return factsheet
 
@@ -547,42 +525,17 @@ def _generate_diff(fund, current_factsheet):
     except Factsheet.DoesNotExist:
         return
 
-    threshold = float(getattr(settings, "WEIGHT_CHANGE_THRESHOLD", 1.0))
-
-    curr_h = {h.stock_name: float(h.weight) for h in current_factsheet.holdings.all()}
-    prev_h = {h.stock_name: float(h.weight) for h in prev.holdings.all()}
-
-    new_holdings    = [{"name": n, "weight": curr_h[n]} for n in curr_h if n not in prev_h]
-    exited_holdings = [{"name": n, "weight": prev_h[n]} for n in prev_h if n not in curr_h]
-    weight_changes  = []
-    for name in set(curr_h) & set(prev_h):
-        delta = curr_h[name] - prev_h[name]
-        if abs(delta) >= threshold:
-            weight_changes.append({
-                "name": name, "prev": prev_h[name],
-                "curr": curr_h[name], "delta": round(delta, 4),
-            })
-    weight_changes.sort(key=lambda x: abs(x["delta"]), reverse=True)
-
-    curr_s = {s.sector_name: float(s.weight) for s in current_factsheet.sectors.all()}
-    prev_s = {s.sector_name: float(s.weight) for s in prev.sectors.all()}
-    sector_changes = []
-    for name in set(list(curr_s) + list(prev_s)):
-        delta = curr_s.get(name, 0) - prev_s.get(name, 0)
-        if abs(delta) >= threshold:
-            sector_changes.append({
-                "name": name, "prev": prev_s.get(name, 0),
-                "curr": curr_s.get(name, 0), "delta": round(delta, 4),
-            })
-
+    # Skip holdings and sectors diff as they're not being fetched
+    # Only track manager, category, and objective changes
+    
     FactsheetDiff.objects.update_or_create(
         fund=fund, current_month=current_factsheet,
         defaults={
             "previous_month":    prev,
-            "new_holdings":      new_holdings,
-            "exited_holdings":   exited_holdings,
-            "weight_changes":    weight_changes,
-            "sector_changes":    sector_changes,
+            "new_holdings":      [],  # Empty since not tracking holdings
+            "exited_holdings":   [],  # Empty since not tracking holdings
+            "weight_changes":    [],  # Empty since not tracking holdings
+            "sector_changes":    [],  # Empty since not tracking sectors
             "manager_changed":   bool(current_factsheet.fund_manager and
                                       current_factsheet.fund_manager != prev.fund_manager),
             "category_changed":  bool(current_factsheet.category and
@@ -597,7 +550,15 @@ def _generate_diff(fund, current_factsheet):
 # Bulk refresh
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_monthly_factsheet_refresh(user=None):
+def run_monthly_factsheet_refresh(user=None, fetcher_name="enriched", enrich_first=True):
+    """
+    Run monthly factsheet refresh with optional enrichment.
+    
+    Args:
+        user: Specific user to refresh funds for
+        fetcher_name: Which fetcher to use ("enriched" or "mfapi")
+        enrich_first: Whether to enrich funds from captnemo API first
+    """
     log = FactsheetFetchLog.objects.create()
     month = date.today().replace(day=1)
 
@@ -605,11 +566,13 @@ def run_monthly_factsheet_refresh(user=None):
     if user:
         qs = MutualFund.objects.filter(portfolio_entries__portfolio__user=user)
     funds = qs.distinct()
+    
+    # Enrichment system removed - using minimal approach now
 
     errors = processed = 0
     for fund in funds:
         try:
-            factsheet = fetch_factsheet_for_fund(fund, month)
+            factsheet = fetch_factsheet_for_fund(fund, month, fetcher_name=fetcher_name)
             processed += 1
             time.sleep(0.3)
             try:
