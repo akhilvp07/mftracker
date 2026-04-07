@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import dj_database_url
 
 load_dotenv()
 
@@ -63,6 +64,11 @@ DATABASES = {
     }
 }
 
+# Use PostgreSQL in production (Vercel)
+if 'DATABASE_URL' in os.environ:
+    DATABASES['default'] = dj_database_url.parse(os.environ['DATABASE_URL'])
+    DATABASES['default']['CONN_MAX_AGE'] = 60
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -111,6 +117,7 @@ FACTSHEET_REFRESH_DAY = int(os.environ.get('FACTSHEET_REFRESH_DAY', '1'))
 FACTSHEET_REFRESH_HOUR = int(os.environ.get('FACTSHEET_REFRESH_HOUR', '2'))
 NAV_REFRESH_HOUR = int(os.environ.get('NAV_REFRESH_HOUR', '9'))
 
+# Logging configuration - disable file logging in production
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -119,13 +126,21 @@ LOGGING = {
     },
     'handlers': {
         'console': {'class': 'logging.StreamHandler', 'formatter': 'verbose'},
-        'file': {'class': 'logging.FileHandler', 'filename': BASE_DIR / 'mftracker.log', 'formatter': 'verbose'},
     },
-    'root': {'handlers': ['console', 'file'], 'level': 'INFO'},
+    'root': {'handlers': ['console'], 'level': 'INFO'},
     'loggers': {
         'django': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
     },
 }
+
+# Add file logging only in development
+if DEBUG:
+    LOGGING['handlers']['file'] = {
+        'class': 'logging.FileHandler', 
+        'filename': BASE_DIR / 'mftracker.log', 
+        'formatter': 'verbose'
+    }
+    LOGGING['root']['handlers'].append('file')
 
 # Production security (only when DEBUG=False)
 if not DEBUG:
@@ -143,9 +158,11 @@ if not DEBUG:
 KITE_API_KEY = os.environ.get('KITE_API_KEY', '')
 KITE_API_SECRET = os.environ.get('KITE_API_SECRET', '')
 
-# CSRF Trusted Origins for ngrok
-CSRF_TRUSTED_ORIGINS = [
-    'https://hemispheric-venice-unpropagable.ngrok-free.dev',
-    'https://*.ngrok-free.dev',
-    'https://*.ngrok.io',
-]
+# CSRF Trusted Origins for production
+CSRF_TRUSTED_ORIGINS = []
+
+# Add production domains
+if os.environ.get('DJANGO_ALLOWED_HOSTS'):
+    for host in os.environ['DJANGO_ALLOWED_HOSTS'].split(','):
+        if host.strip():
+            CSRF_TRUSTED_ORIGINS.append(f'https://{host.strip()}')
