@@ -20,6 +20,6 @@
     "DJANGO_SETTINGS_MODULE": "config.settings"
   },
   "installCommand": "pip install -r requirements.txt",
-  "buildCommand": "python manage.py collectstatic --noinput --clear && python manage.py migrate --noinput --fake-initial",
+  "buildCommand": "./scripts/build.sh",
   "outputDirectory": "staticfiles"
 }
