@@ -297,6 +297,7 @@ def refresh_nav(request, pf_id):
     portfolio = get_object_or_404(Portfolio, user=request.user)
     pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
     try:
+        # Always fetch history when manually refreshing individual fund
         fetch_fund_nav(pf.fund, fetch_history=True)
         calculate_fund_xirr(pf)
         
@@ -337,7 +338,8 @@ def refresh_all_nav(request):
     for i, holding in enumerate(holdings):
         logger.info(f"Processing fund {i+1}/{len(holdings)}: {holding.fund.scheme_name}")
         try:
-            fetch_fund_nav(holding.fund, fetch_history=False)  # Don't fetch history to speed up
+            # Use optimized /latest endpoint for faster refresh
+            fetch_fund_nav(holding.fund, fetch_history=False)
             calculate_fund_xirr(holding)
             success_count += 1
             logger.info(f"Successfully refreshed NAV for {holding.fund.scheme_name}")

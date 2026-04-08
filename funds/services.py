@@ -292,18 +292,30 @@ def seed_fund_database(force=False):
 def fetch_fund_nav(fund, fetch_history=False):
     """Fetch current NAV (and optionally full history) for a fund."""
     try:
-        url = f"{MFAPI_BASE}/{fund.scheme_code}"
-        raw = _fetch_with_retry(url, max_retries=3, timeout=20)
-        data = json.loads(raw)
-        
-        logger.info(f"Fetched NAV data for {fund.scheme_code}: {len(data.get('data', []))} entries")
+        # Use /latest endpoint for faster response when history is not needed
+        if fetch_history:
+            url = f"{MFAPI_BASE}/{fund.scheme_code}"
+            raw = _fetch_with_retry(url, max_retries=3, timeout=20)
+            data = json.loads(raw)
+            logger.info(f"Fetched NAV data for {fund.scheme_code}: {len(data.get('data', []))} entries")
+            
+            # Get metadata from full response
+            meta = data.get('meta', {})
+            fund.amc = meta.get('fund_house', fund.amc or '')
+            fund.category = meta.get('scheme_category', fund.category or '')
+            fund.fund_type = meta.get('scheme_type', fund.fund_type or '')
+            
+            nav_data = data.get('data', [])
+        else:
+            # Use /latest endpoint for faster response
+            url = f"{MFAPI_BASE}/{fund.scheme_code}/latest"
+            raw = _fetch_with_retry(url, max_retries=3, timeout=10)
+            data = json.loads(raw)
+            logger.info(f"Fetched latest NAV for {fund.scheme_code}")
+            
+            # Create single entry structure for consistency
+            nav_data = [data] if data else []
 
-        meta = data.get('meta', {})
-        fund.amc = meta.get('fund_house', fund.amc or '')
-        fund.category = meta.get('scheme_category', fund.category or '')
-        fund.fund_type = meta.get('scheme_type', fund.fund_type or '')
-
-        nav_data = data.get('data', [])
         if nav_data:
             latest = nav_data[0]
             try:
@@ -331,7 +343,7 @@ def fetch_fund_nav(fund, fetch_history=False):
             except (ValueError, KeyError) as e:
                 logger.warning(f"Could not parse NAV for {fund.scheme_code}: {e}")
 
-        if fetch_history:
+        if fetch_history and nav_data:
             logger.info(f"Fetching history for {fund.scheme_code} with {len(nav_data)} entries")
             _save_nav_history(fund, nav_data)
 
