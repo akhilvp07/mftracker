@@ -240,6 +240,21 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('edit_notes').value = notes;
       
       const modal = new bootstrap.Modal(document.getElementById('editLotModal'));
+      
+      // Force dark mode styles if in dark mode
+      if (document.documentElement.getAttribute('data-theme') === 'dark') {
+        const modalEl = document.getElementById('editLotModal');
+        modalEl.addEventListener('shown.bs.modal', function() {
+          const modalContent = modalEl.querySelector('.modal-content');
+          modalContent.style.backgroundColor = 'var(--bg-surface)';
+          modalContent.style.color = 'var(--text-primary)';
+          
+          const modalBody = modalEl.querySelector('.modal-body');
+          modalBody.style.backgroundColor = 'var(--bg-surface)';
+          modalBody.style.color = 'var(--text-primary)';
+        });
+      }
+      
       modal.show();
     });
   });

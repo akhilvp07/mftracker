@@ -167,42 +167,51 @@ body {
   }
 }
 
-/* Dark mode for modals */
-[data-theme="dark"] .modal {
+/* Dark mode for modals - Higher specificity */
+[data-theme="dark"] div.modal {
   color: var(--text-primary) !important;
 }
 
-[data-theme="dark"] .modal-backdrop {
+[data-theme="dark"] div.modal-backdrop {
   background-color: rgba(0, 0, 0, 0.8) !important;
 }
 
-[data-theme="dark"] .modal-content {
+[data-theme="dark"] div.modal-content {
   background-color: var(--bg-surface) !important;
-  border-color: var(--border-light) !important;
+  border: 1px solid var(--border-light) !important;
   color: var(--text-primary) !important;
 }
 
-[data-theme="dark"] .modal-header {
+[data-theme="dark"] div.modal-header {
   background-color: var(--bg-surface) !important;
-  border-bottom-color: var(--border-light) !important;
+  border-bottom: 1px solid var(--border-light) !important;
 }
 
-[data-theme="dark"] .modal-body {
+[data-theme="dark"] div.modal-body {
   background-color: var(--bg-surface) !important;
   color: var(--text-primary) !important;
 }
 
-[data-theme="dark"] .modal-footer {
+[data-theme="dark"] div.modal-footer {
   background-color: var(--bg-surface) !important;
-  border-top-color: var(--border-light) !important;
+  border-top: 1px solid var(--border-light) !important;
 }
 
-[data-theme="dark"] .modal-title {
+[data-theme="dark"] h5.modal-title {
   color: var(--text-primary) !important;
 }
 
-[data-theme="dark"] .btn-close {
-  filter: invert(1);
+[data-theme="dark"] button.btn-close {
+  filter: invert(1) !important;
+}
+
+/* Force dark background for all elements in modal */
+[data-theme="dark"] .modal * {
+  background-color: transparent !important;
+}
+
+[data-theme="dark"] .modal .bg-white {
+  background-color: var(--bg-surface) !important;
 }
 
 /* Dark mode for modal form elements */
