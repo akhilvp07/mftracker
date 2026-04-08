@@ -924,7 +924,7 @@ a:focus-visible {
 }
 
 [data-theme="dark"] .mft-breadcrumb .active {
-  color: var(--text-secondary) !important;
+  color: var(--text-primary) !important;
 }
 
 /* EMPTY STATE */
