@@ -314,7 +314,6 @@ def refresh_nav(request, pf_id):
 
 
 @login_required
-@require_POST
 def refresh_all_nav(request):
     """Refresh NAV for all funds in the user's portfolio"""
     logger.info(f"Starting bulk NAV refresh for user {request.user.username}")

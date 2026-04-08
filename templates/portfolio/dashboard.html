@@ -53,7 +53,7 @@
 <div class="page-header mb-4">
   <h2 class="page-title">Portfolio Dashboard</h2>
   <div class="page-actions">
-    <form method="post" action="/dashboard/test-refresh/" class="d-inline" id="refreshAllNavForm">
+    <form method="post" action="/dashboard/refresh-all-nav/" class="d-inline" id="refreshAllNavForm">
       {% csrf_token %}
       <button type="submit" class="btn mft-btn-outline btn-sm" id="refreshAllNavBtn">
         <i class="bi bi-arrow-clockwise me-1" id="refreshIcon"></i>
@@ -205,7 +205,6 @@ document.addEventListener('DOMContentLoaded', function() {
   if (refreshBtn) {
     refreshBtn.addEventListener('click', function(e) {
       console.log('Refresh All NAV button clicked');
-      e.preventDefault();
       
       const icon = document.getElementById('refreshIcon');
       const text = document.getElementById('refreshText');
@@ -220,10 +219,8 @@ document.addEventListener('DOMContentLoaded', function() {
       this.disabled = true;
       this.style.opacity = '0.7';
       
-      // Submit the form
-      const form = document.getElementById('refreshAllNavForm');
-      console.log('Submitting form to:', form.action);
-      form.submit();
+      // Let the form submit normally
+      console.log('Form will submit to:', document.getElementById('refreshAllNavForm').action);
     });
   }
 });
