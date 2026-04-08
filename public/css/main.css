@@ -191,6 +191,16 @@ body {
   filter: invert(1);
 }
 
+/* Spinning animation for refresh icons */
+.fa-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Fix hover colors in dark mode */
 [data-theme="dark"] a:hover {
   color: var(--primary-hover) !important;

@@ -309,6 +309,62 @@ def refresh_nav(request, pf_id):
 
 @login_required
 @require_POST
+def refresh_all_nav(request):
+    """Refresh NAV for all funds in the user's portfolio"""
+    portfolio = get_object_or_404(Portfolio, user=request.user)
+    holdings = portfolio.holdings.select_related('fund').all()
+    
+    if not holdings:
+        messages.info(request, 'No funds in portfolio to refresh.')
+        return redirect('dashboard')
+    
+    success_count = 0
+    error_count = 0
+    
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+    
+    def refresh_single_nav(holding):
+        """Refresh NAV for a single fund"""
+        try:
+            fetch_fund_nav(holding.fund, fetch_history=True)
+            calculate_fund_xirr(holding)
+            return True, holding.fund.scheme_name
+        except Exception as e:
+            logger.error(f"Failed to refresh NAV for {holding.fund.scheme_name}: {e}")
+            return False, f"{holding.fund.scheme_name}: {str(e)}"
+    
+    # Use ThreadPoolExecutor for parallel fetching (max 5 threads)
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(refresh_single_nav, holding) for holding in holdings]
+        
+        for future in as_completed(futures):
+            success, result = future.result()
+            if success:
+                success_count += 1
+            else:
+                error_count += 1
+                logger.error(f"NAV refresh error: {result}")
+    
+    # Recalculate portfolio XIRR after all NAVs are updated
+    try:
+        calculate_portfolio_xirr(portfolio)
+    except Exception as e:
+        logger.error(f"Failed to recalculate portfolio XIRR: {e}")
+    
+    # Show result message
+    if error_count == 0:
+        messages.success(request, f'Successfully refreshed NAV for all {success_count} funds!')
+    elif success_count > 0:
+        messages.warning(request, f'Refreshed {success_count} funds, {error_count} failed. Check logs for details.')
+    else:
+        messages.error(request, f'Failed to refresh any NAV. Please try again later.')
+    
+    return redirect('dashboard')
+
+
+@login_required
+@require_POST
 def recalculate_xirr(request):
     portfolio = get_object_or_404(Portfolio, user=request.user)
     count = 0

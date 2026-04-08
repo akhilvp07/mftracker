@@ -13,6 +13,7 @@ urlpatterns = [
     path('kite/sync/', views.sync_kite_holdings, name='sync_kite_holdings'),
     path('fund/<int:pf_id>/remove/', views.remove_fund, name='remove_fund'),
     path('fund/<int:pf_id>/refresh-nav/', views.refresh_nav, name='refresh_nav'),
+    path('refresh-all-nav/', views.refresh_all_nav, name='refresh_all_nav'),
     path('lot/<int:lot_id>/delete/', views.delete_lot, name='delete_lot'),
     path('recalculate-xirr/', views.recalculate_xirr, name='recalculate_xirr'),
     path('settings/', views.settings_view, name='settings'),
