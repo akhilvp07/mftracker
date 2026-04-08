@@ -8,6 +8,10 @@
     {
       "src": "api/migrate.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "api/debug.py",
+      "use": "@vercel/python"
     }
   ],
   "routes": [
@@ -18,6 +22,10 @@
     {
       "src": "/api/migrate",
       "dest": "/api/migrate.py"
+    },
+    {
+      "src": "/api/debug",
+      "dest": "/api/debug.py"
     },
     {
       "src": "/(.*)",
@@ -33,6 +41,9 @@
     },
     "api/migrate.py": {
       "maxDuration": 30
+    },
+    "api/debug.py": {
+      "maxDuration": 10
     }
   }
 }
