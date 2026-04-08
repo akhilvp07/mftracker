@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   
   <!-- Critical CSS first -->
-  <link href="{% static 'css/main.css' %}?v=14" rel="stylesheet">
+  <link href="{% static 'css/main.css' %}?v=15" rel="stylesheet">
   
   <!-- External CSS with async loading -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" media="print" onload="this.media='all'">
@@ -74,6 +74,19 @@
     }
     [data-theme="dark"] .breadcrumb-item.active {
       color: #d4d4d4 !important;
+    }
+    
+    /* Fix mobile menu background - critical */
+    @media (max-width: 991.98px) {
+      .navbar-collapse {
+        background-color: #f8f9fa !important;
+        border: 1px solid #dee2e6 !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+      }
+      [data-theme="dark"] .navbar-collapse {
+        background-color: #1a1a1a !important;
+        border-color: #404040 !important;
+      }
     }
   </style>
   
