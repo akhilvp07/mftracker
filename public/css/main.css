@@ -169,6 +169,33 @@ body {
   color: var(--text-primary) !important;
 }
 
+[data-theme="dark"] input.form-control {
+  --bs-body-color: var(--text-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] input[type="date"] {
+  --bs-body-color: var(--text-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .mft-input {
+  --bs-body-color: var(--text-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] input {
+  --bs-body-color: var(--text-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] textarea {
+  --bs-body-color: var(--text-primary) !important;
+  color: var(--text-primary) !important;
+}
+
 [data-theme="dark"] .form-hint {
   color: var(--text-tertiary) !important;
 }
