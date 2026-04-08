@@ -22,9 +22,15 @@ def run_migrations(request):
     """Run Django migrations - for initial setup"""
     if request.method == 'POST':
         try:
-            execute_from_command_line(['manage.py', 'migrate', '--noinput'])
+            # First try with fake-initial to handle partial migrations
+            execute_from_command_line(['manage.py', 'migrate', '--fake-initial', '--noinput'])
             return JsonResponse({'status': 'success', 'message': 'Migrations completed successfully'})
         except Exception as e:
-            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+            # If that fails, try without fake-initial
+            try:
+                execute_from_command_line(['manage.py', 'migrate', '--noinput'])
+                return JsonResponse({'status': 'success', 'message': 'Migrations completed successfully'})
+            except Exception as e2:
+                return JsonResponse({'status': 'error', 'message': str(e2)}, status=500)
     
     return JsonResponse({'status': 'ready', 'message': 'POST to run migrations'})
