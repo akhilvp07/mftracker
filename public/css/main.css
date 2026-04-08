@@ -146,6 +146,27 @@ body {
   color: var(--text-primary) !important;
 }
 
+/* Dark mode mobile menu */
+@media (max-width: 991.98px) {
+  [data-theme="dark"] .navbar-collapse {
+    background-color: var(--bg-surface) !important;
+    border-color: var(--border-light) !important;
+  }
+  
+  [data-theme="dark"] .nav-link {
+    color: var(--text-primary) !important;
+  }
+  
+  [data-theme="dark"] .nav-link:hover {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  [data-theme="dark"] .nav-link.active {
+    background-color: var(--primary-container) !important;
+    color: var(--primary) !important;
+  }
+}
+
 /* Fix hover colors in dark mode */
 [data-theme="dark"] a:hover {
   color: var(--primary-hover) !important;
@@ -250,6 +271,50 @@ a:focus-visible {
   top: 0;
   z-index: 1000;
   transition: all var(--transition-normal);
+}
+
+/* Mobile Menu Styles */
+@media (max-width: 991.98px) {
+  .navbar-collapse {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-light);
+    border-top: none;
+    box-shadow: var(--shadow-lg);
+    padding: 1rem 0;
+    z-index: 1000;
+  }
+  
+  .navbar-nav {
+    padding: 0 1rem;
+  }
+  
+  .nav-item {
+    margin: 0.25rem 0;
+  }
+  
+  .nav-link {
+    padding: 0.75rem 1rem !important;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+  }
+  
+  .nav-link:hover {
+    background-color: var(--bg-secondary);
+  }
+  
+  .nav-link.active {
+    background-color: var(--primary-container);
+    color: var(--primary) !important;
+  }
+  
+  .user-chip,
+  .theme-toggle {
+    margin: 0 1rem;
+  }
 }
 
 .brand-icon {
