@@ -57,12 +57,23 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
+# Database
+# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default='sqlite:///' + os.path.join(BASE_DIR, 'db.sqlite3'),
+        conn_max_age=600,  # Persistent connections for faster queries
+        conn_health_checks=True
+    )
 }
+
+# Optimize database for faster queries
+if not DEBUG:
+    DATABASES['default']['OPTIONS'] = {
+        'MAX_CONNS': 20,
+        'MIN_CONNS': 5,
+    }
 
 # Use PostgreSQL in production (Vercel)
 if 'DATABASE_URL' in os.environ:
@@ -91,6 +102,14 @@ if not DEBUG:
     # Whitenoise will handle static files
     # Ensure static files are served even when DEBUG=False
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    
+    # Cache static files for 1 year
+    WHITENOISE_MAX_AGE = 31536000
+    
+    # Add security headers
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

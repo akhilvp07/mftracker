@@ -97,3 +97,7 @@ def debug_static(request):
         'staticfiles_list': staticfiles_list,
         'source_list': source_list
     })
+
+def health_check(request):
+    """Simple health check to warm up the server"""
+    return HttpResponse("OK", status=200)
