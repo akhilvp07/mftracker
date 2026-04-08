@@ -53,9 +53,9 @@
 <div class="page-header mb-4">
   <h2 class="page-title">Portfolio Dashboard</h2>
   <div class="page-actions">
-    <form method="post" action="/dashboard/refresh-all-nav/" class="d-inline" id="refreshAllNavForm">
+    <form method="post" action="/dashboard/test-refresh/" class="d-inline" id="refreshAllNavForm">
       {% csrf_token %}
-      <button type="submit" class="btn mft-btn-outline btn-sm" onclick="showRefreshingState(); return true;">
+      <button type="submit" class="btn mft-btn-outline btn-sm" id="refreshAllNavBtn">
         <i class="bi bi-arrow-clockwise me-1" id="refreshIcon"></i>
         <span id="refreshText">Refresh All NAV</span>
       </button>
@@ -199,22 +199,33 @@
 </div>
 
 <script>
-function showRefreshingState() {
-  const icon = document.getElementById('refreshIcon');
-  const text = document.getElementById('refreshText');
-  const button = icon.closest('button');
-  
-  // Add spinning class to icon
-  icon.classList.add('fa-spin');
-  
-  // Update text
-  text.textContent = 'Refreshing...';
-  
-  // Disable button
-  button.disabled = true;
-  
-  // Add visual feedback
-  button.style.opacity = '0.7';
-}
+document.addEventListener('DOMContentLoaded', function() {
+  // Handle Refresh All NAV button
+  const refreshBtn = document.getElementById('refreshAllNavBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', function(e) {
+      console.log('Refresh All NAV button clicked');
+      e.preventDefault();
+      
+      const icon = document.getElementById('refreshIcon');
+      const text = document.getElementById('refreshText');
+      
+      // Add spinning class to icon
+      icon.classList.add('fa-spin');
+      
+      // Update text
+      text.textContent = 'Refreshing...';
+      
+      // Disable button
+      this.disabled = true;
+      this.style.opacity = '0.7';
+      
+      // Submit the form
+      const form = document.getElementById('refreshAllNavForm');
+      console.log('Submitting form to:', form.action);
+      form.submit();
+    });
+  }
+});
 </script>
 {% endblock %}

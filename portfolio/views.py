@@ -361,6 +361,14 @@ def refresh_all_nav(request):
 
 
 @login_required
+def test_refresh(request):
+    """Test view to debug button submission"""
+    logger.info("TEST: test_refresh view accessed")
+    messages.info(request, "Test refresh successful!")
+    return redirect('dashboard')
+
+
+@login_required
 @require_POST
 def recalculate_xirr(request):
     portfolio = get_object_or_404(Portfolio, user=request.user)
