@@ -52,10 +52,20 @@ def debug_static(request):
     """Debug static files configuration"""
     from django.conf import settings
     from django.templatetags.static import static
+    import os
+    
+    # Check if files exist
+    css_path = os.path.join(settings.STATIC_ROOT, 'css/main.css')
+    js_path = os.path.join(settings.STATIC_ROOT, 'js/main.js')
+    
     return JsonResponse({
         'STATIC_URL': settings.STATIC_URL,
         'STATIC_ROOT': str(settings.STATIC_ROOT),
         'STATICFILES_DIRS': [str(path) for path in settings.STATICFILES_DIRS],
         'css_url': static('css/main.css'),
-        'js_url': static('js/main.js')
+        'js_url': static('js/main.js'),
+        'css_exists': os.path.exists(css_path),
+        'js_exists': os.path.exists(js_path),
+        'css_path': css_path,
+        'js_path': js_path
     })
