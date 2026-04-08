@@ -54,17 +54,29 @@ def debug_static(request):
     from django.templatetags.static import static
     import os
     
-    # Check if files exist
-    css_path = os.path.join(settings.STATIC_ROOT, 'css/main.css')
-    js_path = os.path.join(settings.STATIC_ROOT, 'js/main.js')
+    # Check both STATIC_ROOT and source directory
+    css_path_root = os.path.join(settings.STATIC_ROOT, 'css/main.css')
+    js_path_root = os.path.join(settings.STATIC_ROOT, 'js/main.js')
     
-    # List staticfiles directory
+    # Check source directory
+    source_static = settings.STATICFILES_DIRS[0] if settings.STATICFILES_DIRS else None
+    css_path_source = os.path.join(source_static, 'css/main.css') if source_static else None
+    js_path_source = os.path.join(source_static, 'js/main.js') if source_static else None
+    
+    # List directories
     staticfiles_list = []
     if os.path.exists(settings.STATIC_ROOT):
         for root, dirs, files in os.walk(settings.STATIC_ROOT):
-            for file in files[:10]:  # Limit to first 10 files
+            for file in files[:10]:
                 rel_path = os.path.relpath(os.path.join(root, file), settings.STATIC_ROOT)
-                staticfiles_list.append(rel_path)
+                staticfiles_list.append(f"STATIC_ROOT/{rel_path}")
+    
+    source_list = []
+    if source_static and os.path.exists(source_static):
+        for root, dirs, files in os.walk(source_static):
+            for file in files[:10]:
+                rel_path = os.path.relpath(os.path.join(root, file), source_static)
+                source_list.append(f"source/{rel_path}")
     
     return JsonResponse({
         'STATIC_URL': settings.STATIC_URL,
@@ -72,10 +84,16 @@ def debug_static(request):
         'STATICFILES_DIRS': [str(path) for path in settings.STATICFILES_DIRS],
         'css_url': static('css/main.css'),
         'js_url': static('js/main.js'),
-        'css_exists': os.path.exists(css_path),
-        'js_exists': os.path.exists(js_path),
-        'css_path': css_path,
-        'js_path': js_path,
+        'css_exists_root': os.path.exists(css_path_root),
+        'js_exists_root': os.path.exists(js_path_root),
+        'css_exists_source': os.path.exists(css_path_source) if css_path_source else False,
+        'js_exists_source': os.path.exists(js_path_source) if js_path_source else False,
+        'css_path_root': css_path_root,
+        'js_path_root': js_path_root,
+        'css_path_source': css_path_source,
+        'js_path_source': js_path_source,
         'staticfiles_root_exists': os.path.exists(settings.STATIC_ROOT),
-        'staticfiles_list': staticfiles_list
+        'source_static_exists': os.path.exists(source_static) if source_static else False,
+        'staticfiles_list': staticfiles_list,
+        'source_list': source_list
     })
