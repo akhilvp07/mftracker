@@ -5,6 +5,7 @@ urlpatterns = [
     path('', views.dashboard, name='dashboard'),
     path('add-fund/', views.add_fund, name='add_fund'),
     path('fund/<int:pf_id>/', views.fund_detail, name='fund_detail'),
+    path('fund/<int:pf_id>/edit/', views.edit_fund, name='edit_fund'),
     path('add_lot/<int:pf_id>/', views.add_lot, name='add_lot'),
     path('kite/login/', views.kite_login, name='kite_login'),
     path('kite/callback/', views.kite_callback, name='kite_callback'),

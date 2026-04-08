@@ -156,6 +156,74 @@ def add_fund(request):
 
 
 @login_required
+def edit_fund(request, pf_id):
+    portfolio = get_object_or_404(Portfolio, user=request.user)
+    pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
+    
+    if request.method == 'POST':
+        # Check if delete action is requested
+        if 'delete_fund' in request.POST:
+            # Delete all lots first
+            pf.lots.all().delete()
+            # Delete the portfolio fund
+            pf.delete()
+            messages.success(request, f'{pf.fund.scheme_name} has been removed from your portfolio.')
+            return redirect('dashboard')
+        
+        # Handle adding new lot
+        elif 'add_lot' in request.POST:
+            try:
+                units = Decimal(request.POST['units'])
+                avg_nav = Decimal(request.POST['avg_nav'])
+                purchase_date = request.POST['purchase_date']
+                notes = request.POST.get('notes', '')
+
+                if units <= 0 or avg_nav <= 0:
+                    messages.error(request, 'Units and NAV must be positive.')
+                else:
+                    PurchaseLot.objects.create(
+                        portfolio_fund=pf,
+                        units=units,
+                        avg_nav=avg_nav,
+                        purchase_date=purchase_date,
+                        notes=notes
+                    )
+                    messages.success(request, 'Purchase lot added successfully.')
+                    return redirect('edit_fund', pf_id=pf.pk)
+            except (ValueError, ValidationError) as e:
+                messages.error(request, f'Invalid input: {e}')
+        
+        # Handle editing existing lot
+        elif 'edit_lot' in request.POST:
+            lot_id = request.POST.get('lot_id')
+            lot = get_object_or_404(PurchaseLot, pk=lot_id, portfolio_fund=pf)
+            try:
+                lot.units = Decimal(request.POST['units'])
+                lot.avg_nav = Decimal(request.POST['avg_nav'])
+                lot.purchase_date = request.POST['purchase_date']
+                lot.notes = request.POST.get('notes', '')
+                lot.save()
+                messages.success(request, 'Purchase lot updated successfully.')
+            except (ValueError, ValidationError) as e:
+                messages.error(request, f'Invalid input: {e}')
+        
+        # Handle deleting a lot
+        elif 'delete_lot' in request.POST:
+            lot_id = request.POST.get('lot_id')
+            lot = get_object_or_404(PurchaseLot, pk=lot_id, portfolio_fund=pf)
+            lot.delete()
+            messages.success(request, 'Purchase lot deleted successfully.')
+
+    # Get all lots for this fund
+    lots = pf.lots.all().order_by('purchase_date')
+    
+    return render(request, 'portfolio/edit_fund.html', {
+        'pf': pf,
+        'lots': lots,
+    })
+
+
+@login_required
 def add_lot(request, pf_id):
     portfolio = get_object_or_404(Portfolio, user=request.user)
     pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
