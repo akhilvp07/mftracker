@@ -217,21 +217,10 @@ DEFAULT_FROM_EMAIL=your@gmail.com
         <div class="mt-3 text-success"><i class="bi bi-check-circle me-1"></i>Portfolio sync active</div>
         {% endif %}
         {% else %}
-        <form method="post" class="mt-3">
-          {% csrf_token %}
-          <div class="mb-3">
-            <label for="kite_api_key" class="form-label small">API Key</label>
-            <input type="text" class="form-control form-control-sm" id="kite_api_key" name="kite_api_key" placeholder="Enter your Kite API Key">
-          </div>
-          <div class="mb-3">
-            <label for="kite_api_secret" class="form-label small">API Secret</label>
-            <input type="password" class="form-control form-control-sm" id="kite_api_secret" name="kite_api_secret" placeholder="Enter your Kite API Secret">
-          </div>
-          <button type="submit" name="save_kite_creds" class="btn mft-btn-primary btn-sm w-100">
-            <i class="bi bi-shield-lock me-2"></i>Save Credentials
-          </button>
-        </form>
+        <div class="env-snippet">KITE_API_KEY=your_api_key
+KITE_API_SECRET=your_secret</div>
         <p class="text-secondary small mt-2">Get credentials at <a href="https://developers.kite.trade" target="_blank">developers.kite.trade</a></p>
+        <p class="text-secondary small mt-2">Add these to your <code>.env</code> file and restart the server.</p>
         {% endif %}
       </div>
     </div>

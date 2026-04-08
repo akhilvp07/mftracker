@@ -11,23 +11,9 @@ from kiteconnect import KiteConnect
 
 logger = logging.getLogger(__name__)
 
-# Get API credentials from KiteCredentials model or environment
-def get_kite_credentials():
-    """Get Kite credentials from database or environment"""
-    try:
-        from .models import KiteCredentials
-        creds = KiteCredentials.get_active_credentials()
-        if creds:
-            return creds.api_key, creds.get_api_secret()
-    except Exception:
-        # Table doesn't exist or other database error
-        pass
-    
-    # Fallback to environment variables
-    from django.conf import settings
-    return getattr(settings, 'KITE_API_KEY', None), getattr(settings, 'KITE_API_SECRET', None)
-
-KITE_API_KEY, KITE_API_SECRET = get_kite_credentials()
+# Get API credentials from Django settings
+KITE_API_KEY = getattr(settings, 'KITE_API_KEY', None)
+KITE_API_SECRET = getattr(settings, 'KITE_API_SECRET', None)
 
 
 def get_kite_session(request):
