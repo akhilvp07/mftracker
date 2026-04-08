@@ -317,11 +317,14 @@ def refresh_nav(request, pf_id):
 @login_required
 def refresh_all_nav(request):
     """Refresh NAV for all funds in the user's portfolio"""
+    from django.http import HttpResponse
+    
     logger.info(f"REFRESH_ALL_NAV: View accessed! Method: {request.method}")
     
-    # Immediate test response
-    messages.info(request, f"Refresh All NAV called! Method: {request.method}")
-    return redirect('dashboard')
+    # Return immediate response to test
+    import datetime
+    version = "2026-04-08-23:22"
+    return HttpResponse(f"REFRESH_ALL_NAV WORKS! Method: {request.method} | Version: {version} | Time: {datetime.datetime.now()}")
 
 
 @login_required
