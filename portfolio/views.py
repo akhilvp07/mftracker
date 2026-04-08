@@ -71,6 +71,7 @@ def dashboard(request):
         'total_gain_pct': total_gain_pct,
         'portfolio_xirr': portfolio_xirr,
         'seed_status': seed_status,
+        'now': timezone.now(),
     })
 
 
@@ -316,46 +317,10 @@ def refresh_nav(request, pf_id):
 @login_required
 def refresh_all_nav(request):
     """Refresh NAV for all funds in the user's portfolio"""
-    logger.info(f"Starting bulk NAV refresh for user {request.user.username}")
-    portfolio = get_object_or_404(Portfolio, user=request.user)
-    holdings = portfolio.holdings.select_related('fund').all()
+    logger.info(f"REFRESH_ALL_NAV: View accessed! Method: {request.method}")
     
-    logger.info(f"Found {len(holdings)} funds in portfolio")
-    
-    if not holdings:
-        messages.info(request, 'No funds in portfolio to refresh.')
-        return redirect('dashboard')
-    
-    success_count = 0
-    error_count = 0
-    
-    # Refresh each fund sequentially to avoid threading issues
-    for i, holding in enumerate(holdings):
-        logger.info(f"Processing fund {i+1}/{len(holdings)}: {holding.fund.scheme_name}")
-        try:
-            fetch_fund_nav(holding.fund, fetch_history=True)
-            calculate_fund_xirr(holding)
-            success_count += 1
-            logger.info(f"Successfully refreshed NAV for {holding.fund.scheme_name}")
-        except Exception as e:
-            error_count += 1
-            logger.error(f"Failed to refresh NAV for {holding.fund.scheme_name}: {e}")
-    
-    # Recalculate portfolio XIRR after all NAVs are updated
-    try:
-        calculate_portfolio_xirr(portfolio)
-    except Exception as e:
-        logger.error(f"Failed to recalculate portfolio XIRR: {e}")
-    
-    # Show result message
-    logger.info(f"Bulk NAV refresh completed: {success_count} success, {error_count} errors")
-    if error_count == 0:
-        messages.success(request, f'Successfully refreshed NAV for all {success_count} funds!')
-    elif success_count > 0:
-        messages.warning(request, f'Refreshed {success_count} funds, {error_count} failed. Check logs for details.')
-    else:
-        messages.error(request, f'Failed to refresh any NAV. Please try again later.')
-    
+    # Immediate test response
+    messages.info(request, f"Refresh All NAV called! Method: {request.method}")
     return redirect('dashboard')
 
 

@@ -53,7 +53,7 @@
 <div class="page-header mb-4">
   <h2 class="page-title">Portfolio Dashboard</h2>
   <div class="page-actions">
-    <form method="post" action="/dashboard/refresh-all-nav/" class="d-inline" id="refreshAllNavForm">
+    <form method="post" action="/dashboard/refresh-all-nav/?_={{ now|date:'U' }}" class="d-inline" id="refreshAllNavForm">
       {% csrf_token %}
       <button type="submit" class="btn mft-btn-outline btn-sm" id="refreshAllNavBtn">
         <i class="bi bi-arrow-clockwise me-1" id="refreshIcon"></i>
