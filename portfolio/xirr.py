@@ -57,7 +57,7 @@ def calculate_fund_xirr(portfolio_fund):
         return None
 
     total_units = sum(lot.units for lot in lots)
-    current_value = float(total_units * current_nav)
+    current_value = float(total_units * Decimal(str(current_nav)))
     today = date.today()
     cashflows.append((today, current_value))
 
@@ -86,7 +86,7 @@ def calculate_portfolio_xirr(portfolio):
         current_nav = pf.fund.current_nav
         if current_nav:
             total_units = sum(lot.units for lot in pf.lots.all())
-            cashflows.append((date.today(), float(total_units * current_nav)))
+            cashflows.append((date.today(), float(total_units * Decimal(str(current_nav)))))
 
     rate = xirr(cashflows) if cashflows else None
 
