@@ -891,6 +891,14 @@ a:focus-visible {
   padding: 0;
 }
 
+.mft-breadcrumb .breadcrumb-item {
+  font-weight: 400;
+}
+
+.mft-breadcrumb .active {
+  font-weight: 400;
+}
+
 .mft-breadcrumb .breadcrumb-item + .breadcrumb-item::before {
   color: var(--text-tertiary);
 }
