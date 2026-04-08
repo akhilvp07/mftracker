@@ -12,7 +12,7 @@ _scheduler = None
 
 def nav_refresh_job():
     from funds.services import refresh_all_navs
-    logger.info("Scheduled: Starting NAV refresh...")
+    logger.info("Scheduled: Starting NAV refresh (7 AM daily)...")
     try:
         success, errors = refresh_all_navs()
         logger.info(f"Scheduled NAV refresh done: {success} ok, {errors} errors")
