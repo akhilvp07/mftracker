@@ -317,8 +317,11 @@ def refresh_nav(request, pf_id):
 @require_POST
 def refresh_all_nav(request):
     """Refresh NAV for all funds in the user's portfolio"""
+    logger.info(f"Starting bulk NAV refresh for user {request.user.username}")
     portfolio = get_object_or_404(Portfolio, user=request.user)
     holdings = portfolio.holdings.select_related('fund').all()
+    
+    logger.info(f"Found {len(holdings)} funds in portfolio")
     
     if not holdings:
         messages.info(request, 'No funds in portfolio to refresh.')
@@ -328,7 +331,8 @@ def refresh_all_nav(request):
     error_count = 0
     
     # Refresh each fund sequentially to avoid threading issues
-    for holding in holdings:
+    for i, holding in enumerate(holdings):
+        logger.info(f"Processing fund {i+1}/{len(holdings)}: {holding.fund.scheme_name}")
         try:
             fetch_fund_nav(holding.fund, fetch_history=True)
             calculate_fund_xirr(holding)
@@ -345,6 +349,7 @@ def refresh_all_nav(request):
         logger.error(f"Failed to recalculate portfolio XIRR: {e}")
     
     # Show result message
+    logger.info(f"Bulk NAV refresh completed: {success_count} success, {error_count} errors")
     if error_count == 0:
         messages.success(request, f'Successfully refreshed NAV for all {success_count} funds!')
     elif success_count > 0:

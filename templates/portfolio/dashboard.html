@@ -55,7 +55,7 @@
   <div class="page-actions">
     <form method="post" action="/dashboard/refresh-all-nav/" class="d-inline" id="refreshAllNavForm">
       {% csrf_token %}
-      <button type="submit" class="btn mft-btn-outline btn-sm" onclick="showRefreshingState()">
+      <button type="submit" class="btn mft-btn-outline btn-sm" onclick="showRefreshingState(); return true;">
         <i class="bi bi-arrow-clockwise me-1" id="refreshIcon"></i>
         <span id="refreshText">Refresh All NAV</span>
       </button>
