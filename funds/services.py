@@ -308,7 +308,22 @@ def fetch_fund_nav(fund, fetch_history=False):
             latest = nav_data[0]
             try:
                 nav_val = float(latest['nav'])
-                nav_date = datetime.strptime(latest['date'], '%d-%m-%Y').date()
+                date_str = latest['date']
+                logger.info(f"NAV date string for {fund.scheme_code}: {date_str}")
+                
+                # Try different date formats
+                for fmt in ['%d-%m-%Y', '%d-%b-%Y', '%d-%B-%Y']:
+                    try:
+                        nav_date = datetime.strptime(date_str, fmt).date()
+                        logger.info(f"Successfully parsed date {date_str} with format {fmt}")
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    # If no format matched, use today's date as fallback
+                    logger.warning(f"Could not parse date {date_str}, using today's date")
+                    nav_date = date.today()
+                
                 fund.current_nav = nav_val
                 fund.nav_date = nav_date
                 fund.nav_last_updated = timezone.now()
@@ -334,8 +349,21 @@ def _save_nav_history(fund, nav_data):
     to_create = []
     for entry in nav_data:
         try:
-            d = datetime.strptime(entry['date'], '%d-%m-%Y').date()
+            date_str = entry['date']
             nav = float(entry['nav'])
+            
+            # Try different date formats
+            for fmt in ['%d-%m-%Y', '%d-%b-%Y', '%d-%B-%Y']:
+                try:
+                    d = datetime.strptime(date_str, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            else:
+                # Skip if no format matched
+                logger.warning(f"Skipping history entry with invalid date: {date_str}")
+                continue
+            
             if d not in existing_dates:
                 to_create.append(NAVHistory(fund=fund, date=d, nav=nav))
         except (ValueError, KeyError):
