@@ -148,30 +148,21 @@ def fetch_and_sync_holdings(request):
             logger.warning(f"Could not find fund: {fund_name}")
             continue
         
-        # Fetch current NAV if not available or outdated
-        # Also check if Kite provides last_price which might be more recent
-        kite_last_price = holding.get('last_price')
-        if kite_last_price and float(kite_last_price) > 0:
-            # Use Kite's last_price if available
-            if not fund.current_nav or abs(float(kite_last_price) - float(fund.current_nav)) > 0.01:
-                fund.current_nav = float(kite_last_price)
-                # Don't override nav_date when using Kite's last_price
-                # Keep the existing nav_date if it exists
-                if not fund.nav_date:
-                    fund.nav_date = date.today()
-                fund.save()
-                logger.info(f"Updated NAV from Kite for {fund.scheme_name}: ₹{kite_last_price}")
-        elif not fund.current_nav or not fund.nav_date or fund.nav_date < date.today():
-            # Fetch from AMFI/mfapi if Kite doesn't provide or NAV is outdated
-            try:
-                nav_data = fetch_fund_nav(fund.scheme_code)
-                if nav_data:
-                    fund.current_nav = nav_data['nav']
-                    fund.nav_date = nav_data['date']
+        # Always fetch fresh NAV from AMFI/mfapi first
+        try:
+            fetch_fund_nav(fund, fetch_history=False)
+            logger.info(f"Updated NAV from AMFI for {fund.scheme_name}: ₹{fund.current_nav}")
+        except Exception as e:
+            logger.error(f"Error fetching NAV from AMFI for {fund.scheme_name}: {e}")
+            # Only use Kite as fallback if AMFI fails
+            kite_last_price = holding.get('last_price')
+            if kite_last_price and float(kite_last_price) > 0:
+                if not fund.current_nav or abs(float(kite_last_price) - float(fund.current_nav)) > 0.01:
+                    fund.current_nav = float(kite_last_price)
+                    if not fund.nav_date:
+                        fund.nav_date = date.today()
                     fund.save()
-                    logger.info(f"Updated NAV from API for {fund.scheme_name}: ₹{nav_data['nav']}")
-            except Exception as e:
-                logger.error(f"Error fetching NAV for {fund.scheme_name}: {e}")
+                    logger.warning(f"Used Kite NAV as fallback for {fund.scheme_name}: ₹{kite_last_price}")
         
         # Also fetch fund manager if not available
         if not fund.fund_manager:
