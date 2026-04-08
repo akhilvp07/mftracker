@@ -120,6 +120,27 @@ body {
   transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
+/* Force dark mode styles */
+[data-theme="dark"] body {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .mft-navbar {
+  background-color: var(--bg-surface) !important;
+  border-bottom-color: var(--border-light) !important;
+}
+
+[data-theme="dark"] .mft-card {
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border-light) !important;
+}
+
+[data-theme="dark"] .stat-card {
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border-light) !important;
+}
+
 a {
   color: var(--primary);
   text-decoration: none;
