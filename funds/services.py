@@ -15,6 +15,9 @@ HEADERS = {
     'Accept': 'application/json, text/plain, */*',
     'Accept-Encoding': 'gzip, deflate',
     'Connection': 'keep-alive',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
 }
 SEED_MAX_RETRIES = 4
 SEED_RETRY_DELAY = 3   # seconds between retries
@@ -292,29 +295,21 @@ def seed_fund_database(force=False):
 def fetch_fund_nav(fund, fetch_history=False):
     """Fetch current NAV (and optionally full history) for a fund."""
     try:
-        # Use /latest endpoint for faster response when history is not needed
-        if fetch_history:
-            url = f"{MFAPI_BASE}/{fund.scheme_code}"
-            raw = _fetch_with_retry(url, max_retries=3, timeout=20)
-            data = json.loads(raw)
-            logger.info(f"Fetched NAV data for {fund.scheme_code}: {len(data.get('data', []))} entries")
-            
-            # Get metadata from full response
-            meta = data.get('meta', {})
-            fund.amc = meta.get('fund_house', fund.amc or '')
-            fund.category = meta.get('scheme_category', fund.category or '')
-            fund.fund_type = meta.get('scheme_type', fund.fund_type or '')
-            
-            nav_data = data.get('data', [])
-        else:
-            # Use /latest endpoint for faster response
-            url = f"{MFAPI_BASE}/{fund.scheme_code}/latest"
-            raw = _fetch_with_retry(url, max_retries=3, timeout=10)
-            data = json.loads(raw)
-            logger.info(f"Fetched latest NAV for {fund.scheme_code}")
-            
-            # Create single entry structure for consistency
-            nav_data = [data] if data else []
+        # Always use full endpoint to ensure latest data
+        import time
+        timestamp = int(time.time())
+        url = f"{MFAPI_BASE}/{fund.scheme_code}?_={timestamp}"
+        raw = _fetch_with_retry(url, max_retries=3, timeout=20)
+        data = json.loads(raw)
+        logger.info(f"Fetched NAV data for {fund.scheme_code}: {len(data.get('data', []))} entries")
+        
+        # Get metadata from full response
+        meta = data.get('meta', {})
+        fund.amc = meta.get('fund_house', fund.amc or '')
+        fund.category = meta.get('scheme_category', fund.category or '')
+        fund.fund_type = meta.get('scheme_type', fund.fund_type or '')
+        
+        nav_data = data.get('data', [])
 
         if nav_data:
             latest = nav_data[0]
