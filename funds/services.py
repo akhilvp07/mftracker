@@ -375,14 +375,15 @@ def _save_nav_history(fund, nav_data):
 
 
 def refresh_all_navs():
-    """Refresh current NAV for all active funds. Called by scheduler."""
+    """Refresh current NAV and history for all active funds. Called by scheduler."""
     funds = MutualFund.objects.filter(is_active=True)
     success = errors = 0
     for fund in funds:
         try:
-            fetch_fund_nav(fund)
+            # Fetch history during scheduled refresh (runs at midnight when load is low)
+            fetch_fund_nav(fund, fetch_history=True)
             success += 1
-            time.sleep(0.1)  # Rate limit
+            time.sleep(0.2)  # Slightly higher rate limit for history fetch
         except Exception as e:
             errors += 1
             logger.error(f"NAV refresh error for {fund.scheme_code}: {e}")

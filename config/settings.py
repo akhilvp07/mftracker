@@ -144,7 +144,7 @@ KITE_REDIRECT_URL = os.environ.get('KITE_REDIRECT_URL', 'http://localhost:8000/p
 WEIGHT_CHANGE_THRESHOLD = float(os.environ.get('WEIGHT_CHANGE_THRESHOLD', '1.0'))
 FACTSHEET_REFRESH_DAY = int(os.environ.get('FACTSHEET_REFRESH_DAY', '1'))
 FACTSHEET_REFRESH_HOUR = int(os.environ.get('FACTSHEET_REFRESH_HOUR', '2'))
-NAV_REFRESH_HOUR = int(os.environ.get('NAV_REFRESH_HOUR', '9'))
+NAV_REFRESH_HOUR = int(os.environ.get('NAV_REFRESH_HOUR', '0'))  # 12 AM (midnight)
 
 # Logging configuration - console only for serverless
 LOGGING = {
