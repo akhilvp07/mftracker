@@ -79,6 +79,9 @@ def fund_detail(request, pf_id):
     portfolio = get_object_or_404(Portfolio, user=request.user)
     pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
     lots = pf.lots.all()
+    
+    # Refresh fund data to get latest NAV
+    pf.fund.refresh_from_db()
 
     # Fetch NAV history for chart
     from funds.models import NAVHistory
@@ -299,6 +302,9 @@ def refresh_nav(request, pf_id):
         from funds.models import NAVHistory
         history_count = NAVHistory.objects.filter(fund=pf.fund).count()
         logger.info(f"NAV history count for {pf.fund.scheme_code}: {history_count}")
+        
+        # Reload the fund object to get updated data
+        pf.fund.refresh_from_db()
         
         messages.success(request, f'NAV refreshed successfully. History entries: {history_count}')
     except Exception as e:
