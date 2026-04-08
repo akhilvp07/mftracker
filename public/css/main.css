@@ -167,6 +167,30 @@ body {
   }
 }
 
+/* Dark mode for modals */
+[data-theme="dark"] .modal-content {
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border-light) !important;
+}
+
+[data-theme="dark"] .modal-header {
+  background-color: var(--bg-surface) !important;
+  border-bottom-color: var(--border-light) !important;
+}
+
+[data-theme="dark"] .modal-footer {
+  background-color: var(--bg-surface) !important;
+  border-top-color: var(--border-light) !important;
+}
+
+[data-theme="dark"] .modal-title {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .btn-close {
+  filter: invert(1);
+}
+
 /* Fix hover colors in dark mode */
 [data-theme="dark"] a:hover {
   color: var(--primary-hover) !important;
