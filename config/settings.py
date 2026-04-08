@@ -117,7 +117,7 @@ FACTSHEET_REFRESH_DAY = int(os.environ.get('FACTSHEET_REFRESH_DAY', '1'))
 FACTSHEET_REFRESH_HOUR = int(os.environ.get('FACTSHEET_REFRESH_HOUR', '2'))
 NAV_REFRESH_HOUR = int(os.environ.get('NAV_REFRESH_HOUR', '9'))
 
-# Logging configuration - disable file logging in production
+# Logging configuration - console only for serverless
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -132,15 +132,6 @@ LOGGING = {
         'django': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
     },
 }
-
-# Add file logging only in development
-if DEBUG:
-    LOGGING['handlers']['file'] = {
-        'class': 'logging.FileHandler', 
-        'filename': BASE_DIR / 'mftracker.log', 
-        'formatter': 'verbose'
-    }
-    LOGGING['root']['handlers'].append('file')
 
 # Production security (only when DEBUG=False)
 if not DEBUG:
