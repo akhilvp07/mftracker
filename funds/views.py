@@ -18,9 +18,8 @@ def seed_view(request):
     return redirect('settings')
 
 @csrf_exempt
-def run_migrations(request):
-    """Run Django migrations - SECURE VERSION"""
-    # Only allow POST
+def create_superuser(request):
+    """Create a superuser - for initial setup"""
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
     
@@ -35,7 +34,16 @@ def run_migrations(request):
         return JsonResponse({'status': 'error', 'message': 'Unauthorized'}, status=401)
     
     try:
-        execute_from_command_line(['manage.py', 'migrate', '--fake-initial', '--noinput'])
-        return JsonResponse({'status': 'success', 'message': 'Migrations completed successfully'})
+        # Get or create superuser
+        from django.contrib.auth.models import User
+        username = request.POST.get('username', 'admin')
+        email = request.POST.get('email', 'admin@example.com')
+        password = request.POST.get('password', 'admin123')
+        
+        if not User.objects.filter(username=username).exists():
+            User.objects.create_superuser(username=username, email=email, password=password)
+            return JsonResponse({'status': 'success', 'message': f'Superuser {username} created'})
+        else:
+            return JsonResponse({'status': 'info', 'message': f'User {username} already exists'})
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
