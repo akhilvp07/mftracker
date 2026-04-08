@@ -907,6 +907,18 @@ a:focus-visible {
   color: var(--text-secondary);
 }
 
+[data-theme="dark"] .mft-breadcrumb .breadcrumb-item + .breadcrumb-item::before {
+  color: var(--text-tertiary) !important;
+}
+
+[data-theme="dark"] .mft-breadcrumb a {
+  color: var(--text-tertiary) !important;
+}
+
+[data-theme="dark"] .mft-breadcrumb .active {
+  color: var(--text-secondary) !important;
+}
+
 /* EMPTY STATE */
 .empty-state {
   text-align: center;
