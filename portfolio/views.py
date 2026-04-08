@@ -12,7 +12,7 @@ from datetime import date, datetime
 import logging
 import hashlib
 
-from .models import Portfolio, PortfolioFund, PurchaseLot, XIRRCache
+from .models import Portfolio, PortfolioFund, PurchaseLot, XIRRCache, KiteCredentials
 from funds.models import MutualFund, NAVHistory
 from factsheets.models import Factsheet, FactsheetDiff
 from .xirr import calculate_portfolio_xirr, calculate_fund_xirr
@@ -385,13 +385,41 @@ def settings_view(request):
             messages.error(request, 'Invalid input values.')
         return redirect('settings')
 
+    # Handle Kite credentials form submission
+    if request.method == 'POST' and 'save_kite_creds' in request.POST:
+        api_key = request.POST.get('kite_api_key', '').strip()
+        api_secret = request.POST.get('kite_api_secret', '').strip()
+        
+        if api_key and api_secret:
+            try:
+                # Deactivate existing credentials
+                KiteCredentials.objects.all().update(is_active=False)
+                
+                # Create new credentials
+                creds = KiteCredentials(api_key=api_key)
+                creds.set_api_secret(api_secret)
+                creds.save()
+                
+                messages.success(request, 'Kite API credentials saved successfully!')
+            except Exception as e:
+                logger.error(f"Error saving Kite credentials: {e}")
+                messages.error(request, f'Error saving credentials: {e}')
+        else:
+            messages.error(request, 'Both API Key and Secret are required.')
+        return redirect('settings')
+
     from factsheets.models import FactsheetFetchLog
     recent_logs = FactsheetFetchLog.objects.order_by('-started_at')[:5]
+
+    # Get Kite credentials from database
+    from .models import KiteCredentials
+    kite_creds = KiteCredentials.get_active_credentials()
+    kite_api_key = kite_creds.api_key if kite_creds else None
 
     return render(request, 'portfolio/settings.html', {
         'portfolio': portfolio,
         'kite_connected': kite_connected,
-        'kite_api_key': django_settings.KITE_API_KEY,
+        'kite_api_key': kite_api_key,
         'smtp_configured': smtp_configured,
         'recent_logs': recent_logs,
         'weight_threshold': django_settings.WEIGHT_CHANGE_THRESHOLD,

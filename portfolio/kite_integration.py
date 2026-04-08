@@ -11,9 +11,16 @@ from kiteconnect import KiteConnect
 
 logger = logging.getLogger(__name__)
 
-# Get API credentials from Django settings
-KITE_API_KEY = getattr(settings, 'KITE_API_KEY', None)
-KITE_API_SECRET = getattr(settings, 'KITE_API_SECRET', None)
+# Get API credentials from KiteCredentials model
+def get_kite_credentials():
+    """Get Kite credentials from database"""
+    from .models import KiteCredentials
+    creds = KiteCredentials.get_active_credentials()
+    if creds:
+        return creds.api_key, creds.get_api_secret()
+    return None, None
+
+KITE_API_KEY, KITE_API_SECRET = get_kite_credentials()
 
 
 def get_kite_session(request):

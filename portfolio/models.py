@@ -227,4 +227,52 @@ class RebalanceAction(models.Model):
         if self.action == 'BUY':
             return f"{self.action} ₹{format_indian_currency(self.amount)} of {self.fund.scheme_name}"
         else:
-            return f"{self.action} ₹{format_indian_currency(self.amount)} - {self.reason}"
+            return f"{self.action} ₹{format_indian_currency(self.amount)} of {self.fund.scheme_name}"
+
+
+class KiteCredentials(models.Model):
+    """Store Kite API credentials securely (system-wide)"""
+    api_key = models.CharField(max_length=100, unique=True)
+    encrypted_api_secret = models.TextField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # Encryption key (in production, this should be stored securely)
+    _encryption_key = None
+    
+    @classmethod
+    def get_encryption_key(cls):
+        """Get or create encryption key"""
+        if cls._encryption_key is None:
+            # In production, use a proper key management system
+            # For now, derive from Django's SECRET_KEY
+            from django.conf import settings
+            import hashlib
+            import base64
+            key = base64.urlsafe_b64encode(hashlib.sha256(settings.SECRET_KEY.encode()).digest())
+            cls._encryption_key = key
+        return cls._encryption_key
+    
+    def set_api_secret(self, secret):
+        """Encrypt and store API secret"""
+        from cryptography.fernet import Fernet
+        f = Fernet(self.get_encryption_key())
+        self.encrypted_api_secret = f.encrypt(secret.encode()).decode()
+    
+    def get_api_secret(self):
+        """Decrypt and return API secret"""
+        from cryptography.fernet import Fernet
+        f = Fernet(self.get_encryption_key())
+        return f.decrypt(self.encrypted_api_secret.encode()).decode()
+    
+    @classmethod
+    def get_active_credentials(cls):
+        """Get the active Kite credentials"""
+        try:
+            return cls.objects.filter(is_active=True).first()
+        except cls.DoesNotExist:
+            return None
+    
+    def __str__(self):
+        return f"Kite API: {self.api_key[:8]}..."
