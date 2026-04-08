@@ -87,9 +87,10 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # For Vercel - serve static files directly
 if not DEBUG:
-    # In production, STATIC_ROOT is used but we'll serve from source
+    # In production, Django doesn't serve static files automatically
     # Whitenoise will handle static files
-    pass
+    # Ensure static files are served even when DEBUG=False
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
