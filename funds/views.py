@@ -47,3 +47,14 @@ def create_superuser(request):
             return JsonResponse({'status': 'info', 'message': f'User {username} already exists'})
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+def debug_static(request):
+    """Debug static files configuration"""
+    from django.templatetags.static import static
+    return JsonResponse({
+        'STATIC_URL': settings.STATIC_URL,
+        'STATIC_ROOT': settings.STATIC_ROOT,
+        'STATICFILES_DIRS': settings.STATICFILES_DIRS,
+        'css_url': static('css/main.css'),
+        'js_url': static('js/main.js')
+    })
