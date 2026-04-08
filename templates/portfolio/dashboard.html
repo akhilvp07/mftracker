@@ -215,9 +215,9 @@ document.addEventListener('DOMContentLoaded', function() {
       // Update text
       text.textContent = 'Refreshing...';
       
-      // Disable button
-      this.disabled = true;
-      this.style.opacity = '0.7';
+      // Don't disable the button - let form submit normally!
+      // this.disabled = true;
+      // this.style.opacity = '0.7';
       
       // Let the form submit normally
       console.log('Form will submit to:', document.getElementById('refreshAllNavForm').action);
