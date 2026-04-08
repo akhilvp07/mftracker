@@ -295,6 +295,8 @@ def fetch_fund_nav(fund, fetch_history=False):
         url = f"{MFAPI_BASE}/{fund.scheme_code}"
         raw = _fetch_with_retry(url, max_retries=3, timeout=20)
         data = json.loads(raw)
+        
+        logger.info(f"Fetched NAV data for {fund.scheme_code}: {len(data.get('data', []))} entries")
 
         meta = data.get('meta', {})
         fund.amc = meta.get('fund_house', fund.amc or '')
@@ -315,6 +317,7 @@ def fetch_fund_nav(fund, fetch_history=False):
                 logger.warning(f"Could not parse NAV for {fund.scheme_code}: {e}")
 
         if fetch_history:
+            logger.info(f"Fetching history for {fund.scheme_code} with {len(nav_data)} entries")
             _save_nav_history(fund, nav_data)
 
         return fund

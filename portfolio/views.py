@@ -294,8 +294,15 @@ def refresh_nav(request, pf_id):
     try:
         fetch_fund_nav(pf.fund, fetch_history=True)
         calculate_fund_xirr(pf)
-        messages.success(request, 'NAV refreshed successfully.')
+        
+        # Check if NAV history was fetched
+        from funds.models import NAVHistory
+        history_count = NAVHistory.objects.filter(fund=pf.fund).count()
+        logger.info(f"NAV history count for {pf.fund.scheme_code}: {history_count}")
+        
+        messages.success(request, f'NAV refreshed successfully. History entries: {history_count}')
     except Exception as e:
+        logger.error(f"NAV refresh error for {pf.fund.scheme_code}: {e}")
         messages.error(request, f'NAV refresh failed: {e}')
     return redirect('fund_detail', pf_id=pf.pk)
 
