@@ -34,16 +34,5 @@
   ],
   "env": {
     "DJANGO_SETTINGS_MODULE": "config.settings"
-  },
-  "functions": {
-    "api/index.py": {
-      "maxDuration": 10
-    },
-    "api/migrate.py": {
-      "maxDuration": 30
-    },
-    "api/debug.py": {
-      "maxDuration": 10
-    }
   }
 }
