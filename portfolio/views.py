@@ -392,6 +392,14 @@ def settings_view(request):
         
         if api_key and api_secret:
             try:
+                # Check if table exists
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'portfolio_kitecredentials'")
+                    if not cursor.fetchone():
+                        messages.error(request, 'Database table not initialized. Please run migrations first.')
+                        return redirect('settings')
+                
                 # Deactivate existing credentials
                 KiteCredentials.objects.all().update(is_active=False)
                 
@@ -412,9 +420,14 @@ def settings_view(request):
     recent_logs = FactsheetFetchLog.objects.order_by('-started_at')[:5]
 
     # Get Kite credentials from database
-    from .models import KiteCredentials
-    kite_creds = KiteCredentials.get_active_credentials()
-    kite_api_key = kite_creds.api_key if kite_creds else None
+    kite_api_key = None
+    try:
+        from .models import KiteCredentials
+        kite_creds = KiteCredentials.get_active_credentials()
+        kite_api_key = kite_creds.api_key if kite_creds else None
+    except Exception:
+        # Table doesn't exist yet, fallback to settings
+        kite_api_key = django_settings.KITE_API_KEY
 
     return render(request, 'portfolio/settings.html', {
         'portfolio': portfolio,
