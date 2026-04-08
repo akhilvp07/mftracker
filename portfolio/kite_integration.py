@@ -155,7 +155,10 @@ def fetch_and_sync_holdings(request):
             # Use Kite's last_price if available
             if not fund.current_nav or abs(float(kite_last_price) - float(fund.current_nav)) > 0.01:
                 fund.current_nav = float(kite_last_price)
-                fund.nav_date = date.today()
+                # Don't override nav_date when using Kite's last_price
+                # Keep the existing nav_date if it exists
+                if not fund.nav_date:
+                    fund.nav_date = date.today()
                 fund.save()
                 logger.info(f"Updated NAV from Kite for {fund.scheme_name}: ₹{kite_last_price}")
         elif not fund.current_nav or not fund.nav_date or fund.nav_date < date.today():

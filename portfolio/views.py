@@ -321,30 +321,16 @@ def refresh_all_nav(request):
     success_count = 0
     error_count = 0
     
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    import threading
-    
-    def refresh_single_nav(holding):
-        """Refresh NAV for a single fund"""
+    # Refresh each fund sequentially to avoid threading issues
+    for holding in holdings:
         try:
             fetch_fund_nav(holding.fund, fetch_history=True)
             calculate_fund_xirr(holding)
-            return True, holding.fund.scheme_name
+            success_count += 1
+            logger.info(f"Successfully refreshed NAV for {holding.fund.scheme_name}")
         except Exception as e:
+            error_count += 1
             logger.error(f"Failed to refresh NAV for {holding.fund.scheme_name}: {e}")
-            return False, f"{holding.fund.scheme_name}: {str(e)}"
-    
-    # Use ThreadPoolExecutor for parallel fetching (max 5 threads)
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(refresh_single_nav, holding) for holding in holdings]
-        
-        for future in as_completed(futures):
-            success, result = future.result()
-            if success:
-                success_count += 1
-            else:
-                error_count += 1
-                logger.error(f"NAV refresh error: {result}")
     
     # Recalculate portfolio XIRR after all NAVs are updated
     try:
