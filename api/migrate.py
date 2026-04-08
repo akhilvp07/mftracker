@@ -31,6 +31,9 @@ def handler(request):
             'body': f'Migration error: {str(e)}'
         }
 
+# For Vercel
+app = handler
+
 # For direct execution
 if __name__ == '__main__':
     execute_from_command_line(['manage.py', 'migrate', '--noinput'])

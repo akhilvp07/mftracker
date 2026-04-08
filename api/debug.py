@@ -10,3 +10,6 @@ def handler(request):
         'headers': {'Content-Type': 'text/plain'},
         'body': f'DATABASE_URL: {db_url[:50]}...' if db_url != 'NOT SET' else 'DATABASE_URL: NOT SET'
     }
+
+# For Vercel
+app = handler
