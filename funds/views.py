@@ -58,6 +58,14 @@ def debug_static(request):
     css_path = os.path.join(settings.STATIC_ROOT, 'css/main.css')
     js_path = os.path.join(settings.STATIC_ROOT, 'js/main.js')
     
+    # List staticfiles directory
+    staticfiles_list = []
+    if os.path.exists(settings.STATIC_ROOT):
+        for root, dirs, files in os.walk(settings.STATIC_ROOT):
+            for file in files[:10]:  # Limit to first 10 files
+                rel_path = os.path.relpath(os.path.join(root, file), settings.STATIC_ROOT)
+                staticfiles_list.append(rel_path)
+    
     return JsonResponse({
         'STATIC_URL': settings.STATIC_URL,
         'STATIC_ROOT': str(settings.STATIC_ROOT),
@@ -67,5 +75,7 @@ def debug_static(request):
         'css_exists': os.path.exists(css_path),
         'js_exists': os.path.exists(js_path),
         'css_path': css_path,
-        'js_path': js_path
+        'js_path': js_path,
+        'staticfiles_root_exists': os.path.exists(settings.STATIC_ROOT),
+        'staticfiles_list': staticfiles_list
     })
