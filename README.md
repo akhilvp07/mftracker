@@ -170,3 +170,4 @@ Factsheet fetcher is designed as a pluggable registry — swap data sources by a
 After running `setup_dev.sh` or `createsuperuser`, use your chosen credentials.  
 The setup script creates a default admin user — **change the password in production**.
 # Deployment trigger
+# Styling restored - reverted static caching changes
