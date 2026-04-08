@@ -19,18 +19,23 @@ def seed_view(request):
 
 @csrf_exempt
 def run_migrations(request):
-    """Run Django migrations - for initial setup"""
-    if request.method == 'POST':
-        try:
-            # First try with fake-initial to handle partial migrations
-            execute_from_command_line(['manage.py', 'migrate', '--fake-initial', '--noinput'])
-            return JsonResponse({'status': 'success', 'message': 'Migrations completed successfully'})
-        except Exception as e:
-            # If that fails, try without fake-initial
-            try:
-                execute_from_command_line(['manage.py', 'migrate', '--noinput'])
-                return JsonResponse({'status': 'success', 'message': 'Migrations completed successfully'})
-            except Exception as e2:
-                return JsonResponse({'status': 'error', 'message': str(e2)}, status=500)
+    """Run Django migrations - SECURE VERSION"""
+    # Only allow POST
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
     
-    return JsonResponse({'status': 'ready', 'message': 'POST to run migrations'})
+    # Check for secret key
+    from django.conf import settings
+    import hmac
+    
+    secret = request.headers.get('X-Migration-Secret')
+    expected_secret = getattr(settings, 'MIGRATION_SECRET', None)
+    
+    if not expected_secret or not hmac.compare_digest(secret, expected_secret):
+        return JsonResponse({'status': 'error', 'message': 'Unauthorized'}, status=401)
+    
+    try:
+        execute_from_command_line(['manage.py', 'migrate', '--fake-initial', '--noinput'])
+        return JsonResponse({'status': 'success', 'message': 'Migrations completed successfully'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)

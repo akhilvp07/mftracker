@@ -88,6 +88,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Migration secret for secure migration endpoint
+MIGRATION_SECRET = os.environ.get('MIGRATION_SECRET', 'change-me-in-production')
+
 # Cache configuration (for progress tracking)
 CACHES = {
     'default': {
