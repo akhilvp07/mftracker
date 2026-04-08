@@ -126,26 +126,21 @@ body {
   color: var(--text-primary) !important;
 }
 
-[data-theme="dark"] button,
-[data-theme="dark"] .btn,
-[data-theme="dark"] input,
-[data-theme="dark"] textarea,
-[data-theme="dark"] select,
-[data-theme="dark"] .mft-btn-outline,
-[data-theme="dark"] .mft-btn-primary {
-  color: var(--text-primary) !important;
+/* Fix button text visibility */
+[data-theme="dark"] .btn {
   --bs-btn-color: var(--text-primary) !important;
 }
 
-[data-theme="dark"] .text-muted,
-[data-theme="dark"] .text-secondary {
-  color: var(--text-secondary) !important;
+[data-theme="dark"] .mft-btn-outline {
+  color: var(--text-primary) !important;
 }
 
-[data-theme="dark"] .text-primary {
-  color: var(--primary) !important;
+/* Fix input text visibility */
+[data-theme="dark"] .form-control {
+  color: var(--text-primary) !important;
 }
 
+/* Fix icon visibility */
 [data-theme="dark"] i,
 [data-theme="dark"] .bi {
   color: var(--text-primary) !important;
@@ -182,58 +177,10 @@ body {
   --bs-btn-color: white !important;
   --bs-btn-bg: var(--primary) !important;
   --bs-btn-border-color: var(--primary) !important;
-  --bs-body-color: white !important;
-}
-
-[data-theme="dark"] .btn {
-  --bs-body-color: white !important;
-}
-
-[data-theme="dark"] .form-control {
-  --bs-body-color: var(--text-primary) !important;
-  color: var(--text-primary) !important;
-}
-
-[data-theme="dark"] input.form-control {
-  --bs-body-color: var(--text-primary) !important;
-  color: var(--text-primary) !important;
-}
-
-[data-theme="dark"] input[type="text"],
-[data-theme="dark"] input[type="number"],
-[data-theme="dark"] input[type="date"] {
-  --bs-body-color: var(--text-primary) !important;
-  color: var(--text-primary) !important;
-}
-
-[data-theme="dark"] .mft-input {
-  --bs-body-color: var(--text-primary) !important;
-  color: var(--text-primary) !important;
-}
-
-[data-theme="dark"] input {
-  --bs-body-color: var(--text-primary) !important;
-  color: var(--text-primary) !important;
-}
-
-[data-theme="dark"] textarea {
-  --bs-body-color: var(--text-primary) !important;
-  color: var(--text-primary) !important;
 }
 
 [data-theme="dark"] .form-hint {
   color: var(--text-tertiary) !important;
-}
-
-[data-theme="dark"] .mft-btn-outline {
-  color: var(--text-primary) !important;
-  border-color: var(--border-light) !important;
-}
-
-[data-theme="dark"] .mft-btn-outline:hover {
-  background-color: var(--bg-surface) !important;
-  color: var(--text-primary) !important;
-  border-color: var(--border-medium) !important;
 }
 
 a {
