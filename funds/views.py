@@ -54,8 +54,8 @@ def debug_static(request):
     from django.templatetags.static import static
     return JsonResponse({
         'STATIC_URL': settings.STATIC_URL,
-        'STATIC_ROOT': settings.STATIC_ROOT,
-        'STATICFILES_DIRS': settings.STATICFILES_DIRS,
+        'STATIC_ROOT': str(settings.STATIC_ROOT),
+        'STATICFILES_DIRS': [str(path) for path in settings.STATICFILES_DIRS],
         'css_url': static('css/main.css'),
         'js_url': static('js/main.js')
     })
