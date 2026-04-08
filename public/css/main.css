@@ -191,6 +191,39 @@ body {
   filter: invert(1);
 }
 
+/* Dark mode for modal form elements */
+[data-theme="dark"] .modal .form-control {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-light) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .modal .form-control:focus {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--primary) !important;
+  color: var(--text-primary) !important;
+  box-shadow: 0 0 0 0.2rem rgba(var(--primary-rgb), 0.25) !important;
+}
+
+[data-theme="dark"] .modal .form-label {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .modal .form-hint {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .modal .btn-secondary {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-light) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .modal .btn-secondary:hover {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+}
+
 /* Spinning animation for refresh icons */
 .fa-spin {
   animation: spin 1s linear infinite;
