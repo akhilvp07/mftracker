@@ -127,7 +127,12 @@
           <td class="text-muted small">{{ lot.notes|default:"" }}</td>
           <td>
             <div class="btn-group" role="group">
-              <button type="button" class="btn btn-sm btn-outline-primary" onclick="editLot({{ lot.pk }}, '{{ lot.purchase_date }}', '{{ lot.units }}', '{{ lot.avg_nav }}', '{{ lot.notes|default:'' }}')">
+              <button type="button" class="btn btn-sm btn-outline-primary edit-lot-btn"
+                        data-lot-id="{{ lot.pk }}"
+                        data-purchase-date="{{ lot.purchase_date }}"
+                        data-units="{{ lot.units }}"
+                        data-avg-nav="{{ lot.avg_nav }}"
+                        data-notes="{{ lot.notes|default:''|escapejs }}">
                 <i class="bi bi-pencil"></i>
               </button>
               <form method="post" class="d-inline" onsubmit="return confirm('Delete this lot?')">
@@ -209,15 +214,26 @@
 
 {% block extra_js %}
 <script>
-function editLot(lotId, purchaseDate, units, avgNav, notes) {
-  document.getElementById('edit_lot_id').value = lotId;
-  document.getElementById('edit_purchase_date').value = purchaseDate;
-  document.getElementById('edit_units').value = units;
-  document.getElementById('edit_avg_nav').value = avgNav;
-  document.getElementById('edit_notes').value = notes;
-  
-  const modal = new bootstrap.Modal(document.getElementById('editLotModal'));
-  modal.show();
-}
+// Add event listeners for edit buttons
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.edit-lot-btn').forEach(button => {
+    button.addEventListener('click', function() {
+      const lotId = this.dataset.lotId;
+      const purchaseDate = this.dataset.purchaseDate;
+      const units = this.dataset.units;
+      const avgNav = this.dataset.avgNav;
+      const notes = this.dataset.notes;
+      
+      document.getElementById('edit_lot_id').value = lotId;
+      document.getElementById('edit_purchase_date').value = purchaseDate;
+      document.getElementById('edit_units').value = units;
+      document.getElementById('edit_avg_nav').value = avgNav;
+      document.getElementById('edit_notes').value = notes;
+      
+      const modal = new bootstrap.Modal(document.getElementById('editLotModal'));
+      modal.show();
+    });
+  });
+});
 </script>
 {% endblock %}
