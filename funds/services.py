@@ -375,8 +375,15 @@ def _save_nav_history(fund, nav_data):
 
 
 def refresh_all_navs():
-    """Refresh current NAV and history for all active funds. Called by scheduler."""
-    funds = MutualFund.objects.filter(is_active=True)
+    """Refresh current NAV and history for all funds in portfolios. Called by scheduler."""
+    from portfolio.models import PortfolioFund
+    
+    # Get only funds that are in user portfolios
+    portfolio_funds = PortfolioFund.objects.select_related('fund').values_list('fund', flat=True).distinct()
+    funds = MutualFund.objects.filter(id__in=portfolio_funds, is_active=True)
+    
+    logger.info(f"Scheduled refresh: Found {funds.count()} funds in portfolios")
+    
     success = errors = 0
     for fund in funds:
         try:
