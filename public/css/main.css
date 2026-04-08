@@ -704,18 +704,21 @@ a:focus-visible {
   color: var(--text-primary);
   border-radius: var(--radius-sm);
   padding: 10px 14px;
-  font-family: var(--font-sans);
   font-size: 0.875rem;
   transition: all var(--transition-fast);
-  width: 100%;
 }
 
 .mft-input:focus {
-  outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-  background-color: var(--bg-surface);
-  color: var(--text-primary);
+  outline: none;
+}
+
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  font-style: italic;
 }
 
 .mft-input::placeholder {
