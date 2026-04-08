@@ -21,4 +21,5 @@ urlpatterns = [
     path('rebalance/', views.rebalance_view, name='rebalance'),
     path('api/search/', views.api_fund_search, name='api_fund_search'),
     path('api/rebalance-progress/', views.api_rebalance_progress, name='api_rebalance_progress'),
+    path('api/cron/refresh-nav/', views.cron_refresh_nav, name='cron_refresh_nav'),
 ]

@@ -16,5 +16,11 @@
     "DJANGO_SETTINGS_MODULE": "config.settings"
   },
   "installCommand": "pip install -r requirements.txt",
-  "regions": ["bom1"]
+  "regions": ["bom1"],
+  "crons": [
+    {
+      "path": "/api/cron/refresh-nav/",
+      "schedule": "0 0 * * *"
+    }
+  ]
 }
