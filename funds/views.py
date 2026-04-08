@@ -50,6 +50,7 @@ def create_superuser(request):
 
 def debug_static(request):
     """Debug static files configuration"""
+    from django.conf import settings
     from django.templatetags.static import static
     return JsonResponse({
         'STATIC_URL': settings.STATIC_URL,
