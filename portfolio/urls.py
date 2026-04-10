@@ -22,4 +22,10 @@ urlpatterns = [
     path('api/search/', views.api_fund_search, name='api_fund_search'),
     path('api/rebalance-progress/', views.api_rebalance_progress, name='api_rebalance_progress'),
     path('api/cron/refresh-nav/', views.cron_refresh_nav, name='cron_refresh_nav'),
+    
+    # CAS Parser integration
+    path('cas-import/', views.cas_unified, name='cas_import'),  # Redirect to unified view
+    path('cas-import/upload/', views.cas_upload, name='cas_upload'),
+    path('cas-import/<int:import_id>/', views.cas_import_detail, name='cas_import_detail'),
+    path('api/cas-import-progress/', views.api_cas_import_progress, name='api_cas_import_progress'),
 ]

@@ -55,17 +55,29 @@
               <div class="col-4">
                 <label class="form-label small">Equity %</label>
                 <input type="number" class="form-control form-control-sm" name="equity_percentage" 
-                       value="{{ asset_allocation.equity_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.equity_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateAssetTotals()">
               </div>
               <div class="col-4">
                 <label class="form-label small">Debt %</label>
                 <input type="number" class="form-control form-control-sm" name="debt_percentage" 
-                       value="{{ asset_allocation.debt_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.debt_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateAssetTotals()">
               </div>
               <div class="col-4">
                 <label class="form-label small">Gold %</label>
                 <input type="number" class="form-control form-control-sm" name="gold_percentage" 
-                       value="{{ asset_allocation.gold_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.gold_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateAssetTotals()">
+              </div>
+            </div>
+            <div class="mt-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="small text-secondary">Total:</span>
+                <span id="assetTotal" class="small fw-bold">100%</span>
+              </div>
+              <div class="progress" style="height: 4px;">
+                <div id="assetProgress" class="progress-bar bg-success" style="width: 100%"></div>
               </div>
             </div>
           </div>
@@ -76,17 +88,29 @@
               <div class="col-4">
                 <label class="form-label small">Large Cap %</label>
                 <input type="number" class="form-control form-control-sm" name="large_cap_percentage" 
-                       value="{{ asset_allocation.large_cap_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.large_cap_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateCapTotals()">
               </div>
               <div class="col-4">
                 <label class="form-label small">Mid Cap %</label>
                 <input type="number" class="form-control form-control-sm" name="mid_cap_percentage" 
-                       value="{{ asset_allocation.mid_cap_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.mid_cap_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateCapTotals()">
               </div>
               <div class="col-4">
                 <label class="form-label small">Small Cap %</label>
                 <input type="number" class="form-control form-control-sm" name="small_cap_percentage" 
-                       value="{{ asset_allocation.small_cap_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.small_cap_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateCapTotals()">
+              </div>
+            </div>
+            <div class="mt-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="small text-secondary">Total:</span>
+                <span id="capTotal" class="small fw-bold">100%</span>
+              </div>
+              <div class="progress" style="height: 4px;">
+                <div id="capProgress" class="progress-bar bg-success" style="width: 100%"></div>
               </div>
             </div>
           </div>
@@ -226,4 +250,85 @@ KITE_API_SECRET=your_secret</div>
     </div>
   </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize totals on page load
+  updateAssetTotals();
+  updateCapTotals();
+  
+  const allocationForm = document.querySelector('form[action=""][method="post"]');
+  if (allocationForm) {
+    allocationForm.addEventListener('submit', function(e) {
+      const equityPercent = parseFloat(document.querySelector('input[name="equity_percentage"]').value) || 0;
+      const debtPercent = parseFloat(document.querySelector('input[name="debt_percentage"]').value) || 0;
+      const goldPercent = parseFloat(document.querySelector('input[name="gold_percentage"]').value) || 0;
+      
+      const assetTotal = equityPercent + debtPercent + goldPercent;
+      
+      if (Math.abs(assetTotal - 100) > 0.01) {
+        e.preventDefault();
+        alert(`Asset allocation must sum to 100%. Currently: ${assetTotal.toFixed(1)}%\n\nPlease adjust the percentages so they add up to exactly 100%.`);
+        return false;
+      }
+      
+      const largeCap = parseFloat(document.querySelector('input[name="large_cap_percentage"]').value) || 0;
+      const midCap = parseFloat(document.querySelector('input[name="mid_cap_percentage"]').value) || 0;
+      const smallCap = parseFloat(document.querySelector('input[name="small_cap_percentage"]').value) || 0;
+      
+      const capTotal = largeCap + midCap + smallCap;
+      
+      if (Math.abs(capTotal - 100) > 0.01) {
+        e.preventDefault();
+        alert(`Equity cap allocation must sum to 100%. Currently: ${capTotal.toFixed(1)}%\n\nPlease adjust the cap percentages so they add up to exactly 100%.`);
+        return false;
+      }
+    });
+  }
+});
+
+function updateAssetTotals() {
+  const equityPercent = parseFloat(document.querySelector('input[name="equity_percentage"]').value) || 0;
+  const debtPercent = parseFloat(document.querySelector('input[name="debt_percentage"]').value) || 0;
+  const goldPercent = parseFloat(document.querySelector('input[name="gold_percentage"]').value) || 0;
+  
+  const total = equityPercent + debtPercent + goldPercent;
+  const totalElement = document.getElementById('assetTotal');
+  const progressElement = document.getElementById('assetProgress');
+  
+  totalElement.textContent = total.toFixed(1) + '%';
+  
+  if (Math.abs(total - 100) < 0.01) {
+    totalElement.className = 'small fw-bold text-success';
+    progressElement.className = 'progress-bar bg-success';
+  } else {
+    totalElement.className = 'small fw-bold text-danger';
+    progressElement.className = 'progress-bar bg-danger';
+  }
+  
+  progressElement.style.width = Math.min(total, 100) + '%';
+}
+
+function updateCapTotals() {
+  const largeCap = parseFloat(document.querySelector('input[name="large_cap_percentage"]').value) || 0;
+  const midCap = parseFloat(document.querySelector('input[name="mid_cap_percentage"]').value) || 0;
+  const smallCap = parseFloat(document.querySelector('input[name="small_cap_percentage"]').value) || 0;
+  
+  const total = largeCap + midCap + smallCap;
+  const totalElement = document.getElementById('capTotal');
+  const progressElement = document.getElementById('capProgress');
+  
+  totalElement.textContent = total.toFixed(1) + '%';
+  
+  if (Math.abs(total - 100) < 0.01) {
+    totalElement.className = 'small fw-bold text-success';
+    progressElement.className = 'progress-bar bg-success';
+  } else {
+    totalElement.className = 'small fw-bold text-danger';
+    progressElement.className = 'progress-bar bg-danger';
+  }
+  
+  progressElement.style.width = Math.min(total, 100) + '%';
+}
+</script>
 {% endblock %}

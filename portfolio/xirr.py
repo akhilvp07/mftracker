@@ -42,15 +42,30 @@ def xirr(cashflows):
 
 def calculate_fund_xirr(portfolio_fund):
     """Calculate XIRR for a single portfolio fund entry."""
-    from .models import XIRRCache
+    from .models import XIRRCache, CASTransaction
     
     lots = portfolio_fund.lots.all()
     if not lots:
         return None
 
     cashflows = []
+    
+    # Add purchase lots as outflows
     for lot in lots:
         cashflows.append((lot.purchase_date, -float(lot.units * lot.avg_nav)))
+    
+    # Add redemption transactions from CAS as inflows
+    try:
+        cas_redemptions = CASTransaction.objects.filter(
+            portfolio_fund=portfolio_fund,
+            transaction_type__in=['REDEMPTION', 'SWITCH_OUT']
+        ).order_by('transaction_date')
+        
+        for redemption in cas_redemptions:
+            cashflows.append((redemption.transaction_date, float(redemption.amount)))
+            
+    except Exception as e:
+        logger.warning(f"Error including CAS redemptions in XIRR: {e}")
 
     current_nav = portfolio_fund.fund.current_nav
     if not current_nav:
@@ -76,9 +91,11 @@ def calculate_fund_xirr(portfolio_fund):
 
 def calculate_portfolio_xirr(portfolio):
     """Calculate XIRR for the entire portfolio."""
-    from .models import XIRRCache
+    from .models import XIRRCache, CASTransaction
 
     cashflows = []
+    
+    # Add purchase lots as outflows
     for pf in portfolio.holdings.select_related('fund').prefetch_related('lots'):
         for lot in pf.lots.all():
             cashflows.append((lot.purchase_date, -float(lot.units * lot.avg_nav)))
@@ -87,6 +104,19 @@ def calculate_portfolio_xirr(portfolio):
         if current_nav:
             total_units = sum(lot.units for lot in pf.lots.all())
             cashflows.append((date.today(), float(total_units * Decimal(str(current_nav)))))
+    
+    # Add redemption transactions from CAS as inflows
+    try:
+        cas_redemptions = CASTransaction.objects.filter(
+            portfolio_fund__portfolio=portfolio,
+            transaction_type__in=['REDEMPTION', 'SWITCH_OUT']
+        ).order_by('transaction_date')
+        
+        for redemption in cas_redemptions:
+            cashflows.append((redemption.transaction_date, float(redemption.amount)))
+            
+    except Exception as e:
+        logger.warning(f"Error including CAS redemptions in portfolio XIRR: {e}")
 
     rate = xirr(cashflows) if cashflows else None
 

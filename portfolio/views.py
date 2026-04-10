@@ -1,4 +1,6 @@
 import time
+import json
+import re
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.shortcuts import render, get_object_or_404, redirect
@@ -13,13 +15,14 @@ from datetime import date, datetime
 import logging
 import hashlib
 
-from .models import Portfolio, PortfolioFund, PurchaseLot, XIRRCache
+from .models import Portfolio, PortfolioFund, PurchaseLot, XIRRCache, CASImport, CASTransaction
 from funds.models import MutualFund, NAVHistory
 from factsheets.models import Factsheet, FactsheetDiff
 from .xirr import calculate_portfolio_xirr, calculate_fund_xirr
 from .services.rebalance import generate_rebalance_suggestion, get_rebalance_summary
 from funds.services import search_funds, fetch_fund_nav, seed_fund_database
 from .kite_integration import KITE_API_KEY, KITE_API_SECRET
+from .casparser_service import cas_parser_service
 
 logger = logging.getLogger(__name__)
 
@@ -446,7 +449,16 @@ def settings_view(request):
             asset_allocation.save()
             messages.success(request, 'Asset allocation settings saved successfully.')
         except ValidationError as e:
-            messages.error(request, f'Error: {e}')
+            # Extract the actual error messages from ValidationError dict
+            if hasattr(e, 'error_dict'):
+                for field, errors in e.error_dict.items():
+                    for error in errors:
+                        if field == '__all__':
+                            messages.error(request, str(error))
+                        else:
+                            messages.error(request, f"{field.replace('_', ' ').title()}: {error}")
+            else:
+                messages.error(request, str(e))
         except (ValueError, KeyError):
             messages.error(request, 'Invalid input values.')
         return redirect('settings')
@@ -634,4 +646,130 @@ def sync_kite_holdings(request):
         messages.error(request, f'Error syncing holdings: {str(e)}')
     
     return redirect('dashboard')
+
+
+# CAS Parser Integration Views
+
+@login_required
+def cas_import(request):
+    """CAS import landing page - redirect to unified page"""
+    return redirect('cas_unified')
+
+@login_required
+def cas_unified(request):
+    """Unified CAS import page - upload or download"""
+    return render(request, 'portfolio/cas_unified.html')
+
+
+@login_required
+def cas_upload(request):
+    """Handle CAS PDF upload and processing"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+    
+    if 'cas_file' not in request.FILES:
+        return JsonResponse({'error': 'No file uploaded'}, status=400)
+    
+    cas_file = request.FILES['cas_file']
+    password = request.POST.get('password', '').strip()
+    
+    if not password:
+        return JsonResponse({'error': 'Password (PAN) is required'}, status=400)
+    
+    # Validate file type
+    if not cas_file.name.lower().endswith('.pdf'):
+        return JsonResponse({'error': 'Only PDF files are allowed'}, status=400)
+    
+    # Validate file size (max 10MB)
+    if cas_file.size > 10 * 1024 * 1024:
+        return JsonResponse({'error': 'File size must be less than 10MB'}, status=400)
+    
+    try:
+        # Check if this is a duplicate by looking for existing imports first
+        import hashlib
+        file_hash = hashlib.md5()
+        cas_file.seek(0)
+        for chunk in iter(lambda: cas_file.read(4096), b""):
+            file_hash.update(chunk)
+        cas_file.seek(0)
+        file_hash = file_hash.hexdigest()
+        
+        # Check for existing completed import
+        from portfolio.models import CASImport
+        existing_import = CASImport.objects.filter(
+            user=request.user,
+            file_hash=file_hash,
+            status='COMPLETED'
+        ).first()
+        
+        if existing_import:
+            # Return existing import as duplicate
+            return JsonResponse({
+                'success': True,
+                'import_id': existing_import.id,
+                'status': 'DUPLICATE',
+                'funds_processed': existing_import.funds_processed,
+                'transactions_processed': existing_import.transactions_processed,
+                'error_message': f'Duplicate file. Original uploaded on {existing_import.created_at}',
+                'message': 'Duplicate file detected'
+            })
+        
+        # Process the CAS file
+        cas_import = cas_parser_service.parse_cas_pdf(cas_file, password, request.user)
+        
+        return JsonResponse({
+            'success': True,
+            'import_id': cas_import.id,
+            'status': cas_import.status,
+            'funds_processed': cas_import.funds_processed,
+            'transactions_processed': cas_import.transactions_processed,
+            'message': 'CAS file uploaded successfully. Processing started...'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading CAS file: {e}")
+        return JsonResponse({'error': f'Processing failed: {str(e)}'}, status=500)
+
+
+@login_required
+
+
+@login_required
+def cas_import_detail(request, import_id):
+    """Show detailed CAS import results"""
+    cas_import = get_object_or_404(CASImport, id=import_id, user=request.user)
+    transactions = cas_import.transactions.select_related('fund', 'portfolio_fund').order_by('transaction_date')
+    
+    return render(request, 'portfolio/cas_import_detail.html', {
+        'cas_import': cas_import,
+        'transactions': transactions
+    })
+
+
+
+
+@login_required
+def api_cas_import_progress(request):
+    """API endpoint to check CAS import progress"""
+    import_id = request.GET.get('import_id')
+    
+    if not import_id:
+        return JsonResponse({'error': 'import_id is required'}, status=400)
+    
+    try:
+        cas_import = CASImport.objects.get(id=import_id, user=request.user)
+        
+        response_data = {
+            'status': cas_import.status,
+            'funds_processed': cas_import.funds_processed,
+            'transactions_processed': cas_import.transactions_processed,
+            'errors_count': cas_import.errors_count,
+            'completed_at': cas_import.completed_at.isoformat() if cas_import.completed_at else None,
+            'error_message': cas_import.error_message
+        }
+        
+        return JsonResponse(response_data)
+        
+    except CASImport.DoesNotExist:
+        return JsonResponse({'error': 'Import not found'}, status=404)
 
