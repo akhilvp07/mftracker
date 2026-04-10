@@ -171,3 +171,4 @@ After running `setup_dev.sh` or `createsuperuser`, use your chosen credentials.
 The setup script creates a default admin user — **change the password in production**.
 # Deployment trigger
 # Styling restored - reverted static caching changes
+# Fri Apr 10 18:12:11 IST 2026
