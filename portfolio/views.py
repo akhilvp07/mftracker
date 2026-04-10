@@ -4,6 +4,7 @@ import re
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.shortcuts import render, get_object_or_404, redirect
+from django.core.management import call_command
 from .api_cron import cron_refresh_nav
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -772,4 +773,27 @@ def api_cas_import_progress(request):
         
     except CASImport.DoesNotExist:
         return JsonResponse({'error': 'Import not found'}, status=404)
+
+
+@login_required
+def run_migrations_api(request):
+    """API endpoint to run migrations - for production deployment"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+    
+    # Simple security check
+    if not request.headers.get('Authorization') == 'Bearer migrate-token':
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    
+    try:
+        call_command('migrate', '--noinput')
+        return JsonResponse({
+            'success': True,
+            'message': 'Migrations applied successfully'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
