@@ -472,7 +472,7 @@ def settings_view(request):
             user_portfolio = Portfolio.objects.get(user=request.user)
             
             # Count what will be deleted
-            funds_count = user_portfolio.portfoliofund_set.count()
+            funds_count = user_portfolio.holdings.count()
             lots_count = PurchaseLot.objects.filter(portfolio_fund__portfolio=user_portfolio).count()
             cas_imports_count = CASImport.objects.filter(user=request.user).count()
             
@@ -484,7 +484,7 @@ def settings_view(request):
             # Delete purchase lots
             PurchaseLot.objects.filter(portfolio_fund__portfolio=user_portfolio).delete()
             # Delete portfolio funds
-            user_portfolio.portfoliofund_set.all().delete()
+            user_portfolio.holdings.all().delete()
             # Clear XIRR cache
             XIRRCache.objects.filter(portfolio=user_portfolio).delete()
             
