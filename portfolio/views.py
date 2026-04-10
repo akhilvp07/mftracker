@@ -464,7 +464,39 @@ def settings_view(request):
         except (ValueError, KeyError):
             messages.error(request, 'Invalid input values.')
         return redirect('settings')
-
+    
+    # Handle portfolio reset
+    if request.method == 'POST' and 'reset_portfolio' in request.POST:
+        try:
+            # Get user's portfolio
+            user_portfolio = Portfolio.objects.get(user=request.user)
+            
+            # Count what will be deleted
+            funds_count = user_portfolio.funds.count()
+            lots_count = PurchaseLot.objects.filter(portfolio_fund__portfolio=user_portfolio).count()
+            cas_imports_count = CASImport.objects.filter(user=request.user).count()
+            
+            # Delete all related data
+            # Delete CAS transactions first
+            CASTransaction.objects.filter(user=request.user).delete()
+            # Delete CAS imports
+            CASImport.objects.filter(user=request.user).delete()
+            # Delete purchase lots
+            PurchaseLot.objects.filter(portfolio_fund__portfolio=user_portfolio).delete()
+            # Delete portfolio funds
+            user_portfolio.funds.all().delete()
+            # Clear XIRR cache
+            XIRRCache.objects.filter(portfolio=user_portfolio).delete()
+            
+            messages.success(request, f'Portfolio reset successfully! Deleted {funds_count} funds, {lots_count} purchase lots, and {cas_imports_count} CAS imports.')
+            
+        except Portfolio.DoesNotExist:
+            messages.error(request, 'No portfolio found to reset.')
+        except Exception as e:
+            messages.error(request, f'Error resetting portfolio: {str(e)}')
+        
+        return redirect('settings')
+    
     from factsheets.models import FactsheetFetchLog
     recent_logs = FactsheetFetchLog.objects.order_by('-started_at')[:5]
 
