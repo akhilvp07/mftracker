@@ -477,9 +477,7 @@ def settings_view(request):
             cas_imports_count = CASImport.objects.filter(user=request.user).count()
             
             # Delete all related data
-            # Delete CAS transactions first
-            CASTransaction.objects.filter(user=request.user).delete()
-            # Delete CAS imports
+            # Delete CAS imports (will cascade delete transactions)
             CASImport.objects.filter(user=request.user).delete()
             # Delete purchase lots
             PurchaseLot.objects.filter(portfolio_fund__portfolio=user_portfolio).delete()
