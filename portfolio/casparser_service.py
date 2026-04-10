@@ -275,7 +275,7 @@ class CASParserService:
                         total_transactions += 1
                     
                     # Update holdings if there are no valid transactions
-                    valid_transactions = [t for t in transactions if Decimal(str(t.get('units', '0'))) != 0]
+                    valid_transactions = [t for t in transactions if self._safe_decimal(t.get('units')) != 0]
                     if not valid_transactions:
                         self._update_current_holdings(portfolio_fund, scheme_data, folio_data)
                     
@@ -425,22 +425,32 @@ class CASParserService:
         logger.warning(f"Could not find or create fund: {fund_data}")
         return None
     
+    def _safe_decimal(self, value):
+        """Safely convert value to Decimal, handling None and empty strings"""
+        if value is None or value == '' or value == 'None':
+            return Decimal('0')
+        try:
+            return Decimal(str(value))
+        except (ValueError, TypeError, decimal.InvalidOperation):
+            return Decimal('0')
+    
     def _process_transaction(self, cas_import: CASImport, portfolio_fund: PortfolioFund, 
                            fund: MutualFund, tx_data: Dict, folio_data: Dict = None):
         """Process individual transaction from CAS data"""
         try:
+            import decimal
             # Map transaction types
             tx_type = self._map_transaction_type(tx_data.get('type', 'purchase'))
             
             # Parse transaction data
             tx_date = datetime.strptime(tx_data.get('date'), '%Y-%m-%d').date()
-            units = Decimal(str(tx_data.get('units', '0')))
-            nav = Decimal(str(tx_data.get('nav', '0')))
-            amount = Decimal(str(tx_data.get('amount', '0')))
+            units = self._safe_decimal(tx_data.get('units'))
+            nav = self._safe_decimal(tx_data.get('nav'))
+            amount = self._safe_decimal(tx_data.get('amount'))
             
             # Skip transactions with 0 units (invalid data) - don't create any records
             if units == 0:
-                logger.warning(f"Skipping transaction with 0 units for {fund.name} on {tx_date}")
+                logger.warning(f"Skipping transaction with 0 units for {fund.scheme_name} on {tx_date}")
                 cas_import.skipped_transactions += 1
                 cas_import.save(update_fields=['skipped_transactions'])
                 return
@@ -456,7 +466,7 @@ class CASParserService:
                 nav=nav,
                 amount=amount,
                 folio_number=folio_data.get('folio', ''),  # Get folio from parent folio_data
-                balance_units=Decimal(str(tx_data.get('balance', '0'))) if tx_data.get('balance') else None,
+                balance_units=self._safe_decimal(tx_data.get('balance')) if tx_data.get('balance') else None,
                 raw_data=tx_data
             )
             
@@ -476,7 +486,7 @@ class CASParserService:
     def _should_reconcile_holdings(self, portfolio_fund: PortfolioFund, scheme_data: Dict) -> bool:
         """Check if holdings need reconciliation"""
         try:
-            cas_units = Decimal(str(scheme_data.get('units', '0')))
+            cas_units = self._safe_decimal(scheme_data.get('units'))
             current_units = portfolio_fund.total_units
             
             # Reconcile if there's a significant difference
@@ -489,13 +499,13 @@ class CASParserService:
         """Update current holdings based on CAS data"""
         try:
             # Get current balance from CAS - use close balance from scheme
-            units = Decimal(str(scheme_data.get('close', '0')))
+            units = self._safe_decimal(scheme_data.get('close'))
             
             # Get valuation data if available
             valuation = scheme_data.get('valuation', {})
             if valuation:
-                value = Decimal(str(valuation.get('value', '0')))
-                nav = Decimal(str(valuation.get('nav', '0')))
+                value = self._safe_decimal(valuation.get('value'))
+                nav = self._safe_decimal(valuation.get('nav'))
             else:
                 value = Decimal('0')
                 nav = Decimal('0')
@@ -531,12 +541,12 @@ class CASParserService:
                         notes=f'Current holdings from CAS (no transaction history)',
                         is_open=True
                     )
-                    logger.info(f"Created holdings lot for {portfolio_fund.fund.name}: {units} units")
+                    logger.info(f"Created holdings lot for {portfolio_fund.fund.scheme_name}: {units} units")
                 else:
                     # If there are transactions but units don't match, we might need to reconcile
                     current_units = portfolio_fund.total_units
                     if abs(current_units - units) > Decimal('0.01'):
-                        logger.warning(f"Holding mismatch for {portfolio_fund.fund.name}: CAS={units}, Calculated={current_units}")
+                        logger.warning(f"Holding mismatch for {portfolio_fund.fund.scheme_name}: CAS={units}, Calculated={current_units}")
             
         except Exception as e:
             logger.error(f"Error updating holdings: {e}")
@@ -574,7 +584,7 @@ class CASParserService:
             ).first()
             
             if existing_redemption:
-                logger.info(f"Redemption already processed for {portfolio_fund.fund.name} on {cas_tx.transaction_date}")
+                logger.info(f"Redemption already processed for {portfolio_fund.fund.scheme_name} on {cas_tx.transaction_date}")
                 cas_tx.purchase_lot = existing_redemption
                 cas_tx.save(update_fields=['purchase_lot'])
                 return
@@ -597,7 +607,7 @@ class CASParserService:
             cas_tx.purchase_lot = redemption_lot
             cas_tx.save(update_fields=['purchase_lot'])
             
-            logger.info(f"Processed redemption of {abs(cas_tx.units)} units for {portfolio_fund.fund.name}")
+            logger.info(f"Processed redemption of {abs(cas_tx.units)} units for {portfolio_fund.fund.scheme_name}")
             
         except Exception as e:
             logger.error(f"Error processing redemption: {e}")
@@ -666,7 +676,7 @@ class CASParserService:
             
             if updated:
                 existing_lot.save(update_fields=['folio_number', 'avg_nav', 'notes'])
-                logger.info(f"Merged CAS data into existing lot for {existing_lot.portfolio_fund.fund.name}")
+                logger.info(f"Merged CAS data into existing lot for {existing_lot.portfolio_fund.fund.scheme_name}")
             else:
                 logger.info(f"No updates needed for existing lot (CAS data already present)")
             
