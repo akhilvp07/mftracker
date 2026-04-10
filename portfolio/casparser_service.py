@@ -372,11 +372,7 @@ class CASParserService:
             portfolio, _ = Portfolio.objects.get_or_create(user=user)
             portfolio_fund, created = PortfolioFund.objects.get_or_create(
                 portfolio=portfolio,
-                fund=fund,
-                defaults={
-                    'target_allocation': 0,
-                    'current_allocation': 0,
-                }
+                fund=fund
             )
             return portfolio_fund
         except Exception as e:
