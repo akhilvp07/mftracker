@@ -11,6 +11,7 @@ from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Sum, Q, F
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from datetime import date, datetime
 import logging
@@ -775,6 +776,7 @@ def api_cas_import_progress(request):
         return JsonResponse({'error': 'Import not found'}, status=404)
 
 
+@csrf_exempt
 def run_migrations_api(request):
     """API endpoint to run migrations - for production deployment"""
     if request.method != 'POST':
