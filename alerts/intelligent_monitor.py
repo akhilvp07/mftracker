@@ -195,7 +195,7 @@ class IntelligentMonitor:
         from .models import Alert
         alerts = Alert.objects.filter(
             user=user
-        ).select_related('fund').order_by('-created_at')
+        ).order_by('-created_at')
         
         # Trigger monitoring for user's funds if needed
         self._check_if_monitoring_needed(user)
