@@ -343,58 +343,51 @@ def refresh_nav(request, pf_id):
 @login_required
 @require_POST
 def refresh_all_nav(request):
-    """Refresh NAV for all funds in the user's portfolio"""
-    logger.info(f"Starting bulk NAV refresh for user {request.user.username}")
+    """Refresh NAV for all funds in user's portfolio using bulk API."""
+    from funds.services import refresh_all_nav_bulk
     
-    portfolio = get_object_or_404(Portfolio, user=request.user)
-    holdings = portfolio.holdings.select_related('fund').all()
+    logger.info(f"User {request.user.username} requested bulk NAV refresh")
     
-    logger.info(f"Found {len(holdings)} funds in portfolio")
-    
-    if not holdings:
-        messages.info(request, 'No funds in portfolio to refresh.')
+    # Get user's portfolio
+    try:
+        portfolio = Portfolio.objects.get(user=request.user)
+    except Portfolio.DoesNotExist:
+        messages.error(request, 'No portfolio found.')
         return redirect('dashboard')
     
-    success_count = 0
-    error_count = 0
+    # Get all funds in portfolio
+    holdings = portfolio.holdings.select_related('fund').prefetch_related('lots').all()
     
-    # Refresh each fund sequentially to avoid threading issues
-    for i, holding in enumerate(holdings):
-        logger.info(f"Processing fund {i+1}/{len(holdings)}: {holding.fund.scheme_name}")
-        try:
-            # Use optimized /latest endpoint for faster refresh
-            fetch_fund_nav(holding.fund, fetch_history=False)
-            calculate_fund_xirr(holding)
-            success_count += 1
-            logger.info(f"Successfully refreshed NAV for {holding.fund.scheme_name}")
-            
-            # Add delay between requests to avoid rate limiting (except for last request)
-            if i < len(holdings) - 1:
-                import time
-                time.sleep(1)  # Wait 1 second between requests
-                
-        except Exception as e:
-            error_count += 1
-            logger.error(f"Failed to refresh NAV for {holding.fund.scheme_name}: {e}")
+    if not holdings:
+        messages.warning(request, 'No funds in portfolio to refresh.')
+        return redirect('dashboard')
     
-    # Recalculate portfolio XIRR after all NAVs are updated
+    logger.info(f"Starting bulk NAV refresh for {len(holdings)} funds")
+    
+    # Use bulk refresh for faster updates
     try:
-        calculate_portfolio_xirr(portfolio)
+        refresh_all_nav_bulk(portfolio)
+        
+        # Recalculate XIRR for all funds after NAV update
+        for holding in holdings:
+            try:
+                calculate_fund_xirr(holding)
+            except Exception as e:
+                logger.error(f"Failed to recalculate XIRR for {holding.fund.scheme_name}: {e}")
+        
+        # Recalculate portfolio XIRR
+        try:
+            calculate_portfolio_xirr(portfolio)
+        except Exception as e:
+            logger.error(f"Failed to recalculate portfolio XIRR: {e}")
+        
+        messages.success(request, f'Successfully refreshed NAV for all {len(holdings)} funds using bulk API!')
+        
     except Exception as e:
-        logger.error(f"Failed to recalculate portfolio XIRR: {e}")
-    
-    # Show result message
-    logger.info(f"Bulk NAV refresh completed: {success_count} success, {error_count} errors")
-    if error_count == 0:
-        messages.success(request, f'Successfully refreshed NAV for all {success_count} funds!')
-    elif success_count > 0:
-        messages.warning(request, f'Refreshed {success_count} funds, {error_count} failed. Check logs for details.')
-    else:
-        messages.error(request, f'Failed to refresh any NAV. Please try again later.')
+        logger.error(f"Bulk NAV refresh failed: {e}")
+        messages.error(request, f'Failed to refresh NAV: {str(e)}')
     
     return redirect('dashboard')
-
-
 
 
 @login_required

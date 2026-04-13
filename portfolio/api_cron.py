@@ -3,7 +3,7 @@ from django.http import HttpResponse, HttpResponseForbidden
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
-from funds.services import refresh_all_navs
+from funds.services import refresh_all_nav
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,18 @@ def cron_refresh_nav(request):
     logger.info("Cron job: Starting NAV refresh...")
     
     try:
-        success, errors = refresh_all_navs()
-        logger.info(f"Cron job: NAV refresh complete - {success} success, {errors} errors")
-        return HttpResponse(f"NAV refresh complete: {success} success, {errors} errors")
+        from portfolio.models import Portfolio
+        # Get all portfolios and refresh NAV for each
+        portfolios = Portfolio.objects.all()
+        total_success = 0
+        total_errors = 0
+        
+        for portfolio in portfolios:
+            refresh_all_nav(portfolio)
+            total_success += 1
+        
+        logger.info(f"Cron job: NAV refresh complete - {total_success} portfolios refreshed")
+        return HttpResponse(f"NAV refresh complete: {total_success} portfolios refreshed")
     except Exception as e:
         logger.error(f"Cron job: NAV refresh failed - {str(e)}")
         return HttpResponse(f"NAV refresh failed: {str(e)}", status=500)

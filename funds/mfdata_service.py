@@ -149,7 +149,7 @@ def fetch_fund_nav(scheme_code):
 
 
 def fetch_bulk_nav(scheme_codes):
-    """Fetch NAV for multiple schemes in one call"""
+    """Fetch NAV for multiple schemes using parallel requests."""
     if not scheme_codes:
         return {}
     
@@ -160,6 +160,7 @@ def fetch_bulk_nav(scheme_codes):
         logger.info(f"Using cached bulk NAV for {len(scheme_codes)} schemes")
         return cached_data
     
+    # Try actual bulk endpoint first
     try:
         # Convert to strings and join
         codes_str = ','.join(str(code) for code in scheme_codes)
@@ -187,11 +188,58 @@ def fetch_bulk_nav(scheme_codes):
             logger.info(f"Fetched bulk NAV for {len(nav_dict)} schemes from mfdata.in")
             return nav_dict
         
-        return {}
-        
     except Exception as e:
-        logger.error(f"Failed to fetch bulk NAV from mfdata.in: {e}")
+        logger.warning(f"Bulk endpoint failed, trying parallel requests: {e}")
+    
+    # Fallback to parallel requests
+    return fetch_bulk_nav_parallel(scheme_codes)
+
+
+def fetch_bulk_nav_parallel(scheme_codes, max_workers=10):
+    """Fetch NAV for multiple schemes using parallel requests."""
+    import concurrent.futures
+    import json
+    
+    if not scheme_codes:
         return {}
+    
+    logger.info(f"Fetching NAV for {len(scheme_codes)} schemes using parallel requests")
+    
+    def fetch_single_nav(scheme_code):
+        """Fetch NAV for a single scheme."""
+        try:
+            url = f"{MFDATA_BASE}/schemes/{scheme_code}/nav"
+            response_text = _fetch_with_retry(url, max_retries=2, timeout=5)
+            data = json.loads(response_text)
+            
+            if data.get('status') == 'success':
+                return data.get('data')
+        except Exception as e:
+            logger.warning(f"Failed to fetch NAV for {scheme_code}: {e}")
+        return None
+    
+    # Use ThreadPoolExecutor for parallel requests
+    nav_dict = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all requests
+        future_to_code = {executor.submit(fetch_single_nav, code): code for code in scheme_codes}
+        
+        # Collect results as they complete
+        for future in concurrent.futures.as_completed(future_to_code):
+            code = future_to_code[future]
+            try:
+                nav_data = future.result()
+                if nav_data:
+                    nav_dict[str(code)] = nav_data
+            except Exception as e:
+                logger.error(f"Error processing result for {code}: {e}")
+    
+    # Cache the result
+    cache_key = f"mfdata_bulk_nav_{'_'.join(map(str, scheme_codes))}"
+    cache.set(cache_key, nav_dict, NAV_CACHE_DURATION)
+    
+    logger.info(f"Fetched NAV for {len(nav_dict)}/{len(scheme_codes)} schemes using parallel requests")
+    return nav_dict
 
 
 def fetch_nav_history(scheme_code, start_date=None, end_date=None, limit=100):

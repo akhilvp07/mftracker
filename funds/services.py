@@ -586,8 +586,8 @@ def _save_nav_history(fund, nav_data):
 
 def refresh_all_nav_bulk(user_portfolio):
     """
-    Refresh NAV for all funds using mfdata.in bulk endpoint.
-    Much faster than individual calls.
+    Refresh NAV for all funds using mfdata.in parallel requests.
+    Much faster than individual sequential calls.
     """
     from portfolio.models import PortfolioFund
     import time
@@ -602,7 +602,7 @@ def refresh_all_nav_bulk(user_portfolio):
         logger.warning("No funds found in portfolio")
         return
     
-    # Try mfdata.in bulk endpoint first
+    # Use mfdata.in parallel fetch
     try:
         from .mfdata_service import fetch_bulk_nav
         bulk_nav_data = fetch_bulk_nav(scheme_codes)
@@ -611,19 +611,29 @@ def refresh_all_nav_bulk(user_portfolio):
             logger.info(f"Successfully fetched bulk NAV data for {len(bulk_nav_data)} funds")
             
             # Update each fund
+            updated_count = 0
             for pf in holdings:
-                code = pf.fund.scheme_code
+                code = str(pf.fund.scheme_code)
                 if code in bulk_nav_data:
                     nav_data = bulk_nav_data[code]
                     
-                    # Update fund
+                    # Update fund with rich data
+                    from decimal import Decimal
                     pf.fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
                     pf.fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
                     pf.fund.nav_last_updated = timezone.now()
-                    pf.fund.save()
                     
-                    logger.info(f"Updated {pf.fund.scheme_name}: {pf.fund.current_nav}")
+                    # Update additional fields if available
+                    if 'expense_ratio' in nav_data:
+                        # Could add expense_ratio field to MutualFund model
+                        pass
+                    
+                    pf.fund.save()
+                    updated_count += 1
+                    
+                    logger.info(f"Updated {pf.fund.scheme_name}: {pf.fund.current_nav} ({nav_data.get('day_change_pct', 0)}%)")
             
+            logger.info(f"Bulk NAV refresh completed: {updated_count}/{len(holdings)} funds updated")
             return
             
     except Exception as e:
