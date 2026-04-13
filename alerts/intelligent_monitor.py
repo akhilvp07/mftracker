@@ -206,20 +206,19 @@ class IntelligentMonitor:
         """
         Check if any of the user's funds need monitoring
         """
-        from portfolio.models import Portfolio
-        
-        # Check if user has any recent alerts
-        recent_alerts = Alert.objects.filter(
-            user=user,
-            created_at__gte=timezone.now() - timedelta(hours=24)
-        ).exists()
-        
-        if recent_alerts:
-            return  # User already has recent alerts
+        # Get user's latest alert timestamp
+        from .models import Alert
+        latest_alert = Alert.objects.filter(user=user).first()
+        if latest_alert:
+            import time
+            # If user has recent alerts (within 24 hours), skip monitoring
+            if time.time() - latest_alert.created_at.timestamp() < 86400:  # 24 hours
+                return
         
         # Check each fund in user's portfolio
-        portfolio_funds = Portfolio.objects.filter(
-            user=user
+        from portfolio.models import PortfolioFund
+        portfolio_funds = PortfolioFund.objects.filter(
+            portfolio__user=user
         ).select_related('fund')
         
         for pf in portfolio_funds:
