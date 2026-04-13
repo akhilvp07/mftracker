@@ -137,9 +137,6 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@mftracker.local')
 
-KITE_API_KEY = os.environ.get('KITE_API_KEY', '')
-KITE_API_SECRET = os.environ.get('KITE_API_SECRET', '')
-KITE_REDIRECT_URL = os.environ.get('KITE_REDIRECT_URL', 'http://localhost:8000/portfolio/kite/callback/')
 
 WEIGHT_CHANGE_THRESHOLD = float(os.environ.get('WEIGHT_CHANGE_THRESHOLD', '1.0'))
 FACTSHEET_REFRESH_DAY = int(os.environ.get('FACTSHEET_REFRESH_DAY', '1'))
@@ -174,10 +171,6 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
 
-# Kite Connect API Configuration
-# Add your API credentials here or use environment variables
-KITE_API_KEY = os.environ.get('KITE_API_KEY', '')
-KITE_API_SECRET = os.environ.get('KITE_API_SECRET', '')
 
 # CSRF Trusted Origins for production
 CSRF_TRUSTED_ORIGINS = []

@@ -7,10 +7,6 @@ urlpatterns = [
     path('fund/<int:pf_id>/', views.fund_detail, name='fund_detail'),
     path('fund/<int:pf_id>/edit/', views.edit_fund, name='edit_fund'),
     path('add_lot/<int:pf_id>/', views.add_lot, name='add_lot'),
-    path('kite/login/', views.kite_login, name='kite_login'),
-    path('kite/callback/', views.kite_callback, name='kite_callback'),
-    path('kite/postback/', views.kite_postback, name='kite_postback'),
-    path('kite/sync/', views.sync_kite_holdings, name='sync_kite_holdings'),
     path('fund/<int:pf_id>/remove/', views.remove_fund, name='remove_fund'),
     path('fund/<int:pf_id>/refresh-nav/', views.refresh_nav, name='refresh_nav'),
     path('refresh-all-nav/', views.refresh_all_nav, name='refresh_all_nav'),
@@ -22,4 +18,11 @@ urlpatterns = [
     path('api/search/', views.api_fund_search, name='api_fund_search'),
     path('api/rebalance-progress/', views.api_rebalance_progress, name='api_rebalance_progress'),
     path('api/cron/refresh-nav/', views.cron_refresh_nav, name='cron_refresh_nav'),
+    path('api/run-migrations/', views.run_migrations_api, name='run_migrations_api'),
+    
+    # CAS Parser integration
+    path('cas-import/', views.cas_unified, name='cas_import'),  # Redirect to unified view
+    path('cas-import/upload/', views.cas_upload, name='cas_upload'),
+    path('cas-import/<int:import_id>/', views.cas_import_detail, name='cas_import_detail'),
+    path('api/cas-import-progress/', views.api_cas_import_progress, name='api_cas_import_progress'),
 ]

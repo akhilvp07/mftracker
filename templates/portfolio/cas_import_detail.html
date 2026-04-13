@@ -1,0 +1,332 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}CAS Import Details{% endblock %}
+
+{% block content %}
+<div class="container-xxl py-4">
+  <div class="row">
+    <div class="col-12">
+      <!-- Header -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+              <li class="breadcrumb-item"><a href="/dashboard/">Dashboard</a></li>
+              <li class="breadcrumb-item active">Import Details</li>
+            </ol>
+          </nav>
+          <h1 class="h2 mb-2">
+            <i class="bi bi-file-earmark-pdf text-primary me-2"></i>
+            {{ cas_import.filename }}
+          </h1>
+          <p class="text-muted mb-0">
+            Imported on {{ cas_import.created_at|date:"F d, Y at H:i" }}
+          </p>
+        </div>
+        <div>
+          <a href="{% url 'cas_import' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>
+            Back to Import
+          </a>
+          {% if cas_import.status == 'COMPLETED' %}
+            <button class="btn btn-success" onclick="recalculateXIRR()">
+              <i class="bi bi-calculator me-1"></i>
+              Recalculate XIRR
+            </button>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Import Summary -->
+      <div class="row mb-4">
+        <div class="col-md-6 mb-3">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+              <h6 class="card-title mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                Import Information
+              </h6>
+            </div>
+            <div class="card-body">
+              <div class="row mb-2">
+                <div class="col-6 text-muted">Status:</div>
+                <div class="col-6">
+                  {% if cas_import.status == 'COMPLETED' %}
+                    <span class="badge bg-success">Completed</span>
+                  {% elif cas_import.status == 'FAILED' %}
+                    <span class="badge bg-danger">Failed</span>
+                  {% elif cas_import.status == 'PROCESSING' %}
+                    <span class="badge bg-primary">Processing</span>
+                  {% else %}
+                    <span class="badge bg-secondary">{{ cas_import.status }}</span>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="row mb-2">
+                <div class="col-6 text-muted">CAS Type:</div>
+                <div class="col-6">{{ cas_import.cas_type|default:"-" }}</div>
+              </div>
+              <div class="row mb-2">
+                <div class="col-6 text-muted">Statement Period:</div>
+                <div class="col-6">
+                  {% if cas_import.statement_period_from and cas_import.statement_period_to %}
+                    {{ cas_import.statement_period_from|date:"M d, Y" }} - 
+                    {{ cas_import.statement_period_to|date:"M d, Y" }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </div>
+              </div>
+              <div class="row mb-2">
+                <div class="col-6 text-muted">Duration:</div>
+                <div class="col-6">
+                  {% if cas_import.started_at and cas_import.completed_at %}
+                    {% load tz %}
+                    {% localtime on %}
+                      {{ cas_import.started_at|date:"H:i:s" }} - {{ cas_import.completed_at|date:"H:i:s" }}
+                    {% endlocaltime %}
+                  {% else %}
+                    -
+                  {% endif %}
+                </div>
+              </div>
+              {% if cas_import.investor_name %}
+                <div class="row mb-2">
+                  <div class="col-6 text-muted">Investor Name:</div>
+                  <div class="col-6">{{ cas_import.investor_name }}</div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-6 mb-3">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+              <h6 class="card-title mb-0">
+                <i class="bi bi-graph-up me-1"></i>
+                Processing Results
+              </h6>
+            </div>
+            <div class="card-body">
+              <div class="row mb-2">
+                <div class="col-6 text-muted">Funds Processed:</div>
+                <div class="col-6 fw-semibold">{{ cas_import.funds_processed }}</div>
+              </div>
+              <div class="row mb-2">
+                <div class="col-6 text-muted">Transactions Processed:</div>
+                <div class="col-6 fw-semibold">{{ cas_import.transactions_processed }}</div>
+              </div>
+              <div class="row mb-2">
+                <div class="col-6 text-muted">Total Value:</div>
+                <div class="col-6 fw-semibold">
+                  {% if cas_import.total_value %}
+                    ₹{{ cas_import.total_value|floatformat:2 }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </div>
+              </div>
+              {% if cas_import.errors_count > 0 %}
+                <div class="row mb-2">
+                  <div class="col-6 text-muted">Errors:</div>
+                  <div class="col-6 text-danger fw-semibold">{{ cas_import.errors_count }}</div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Message (if failed) -->
+      {% if cas_import.status == 'FAILED' and cas_import.error_message %}
+        <div class="alert alert-danger" role="alert">
+          <div class="d-flex align-items-start">
+            <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
+            <div>
+              <strong>Import Failed</strong><br>
+              {{ cas_import.error_message }}
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Transactions Table -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom">
+          <div class="d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">
+              <i class="bi bi-list-ul me-1"></i>
+              Transactions ({{ transactions.count }})
+            </h5>
+            <div class="d-flex gap-2">
+              <input type="text" 
+                     class="form-control form-control-sm" 
+                     id="searchTransactions" 
+                     placeholder="Search transactions..."
+                     style="width: 200px;">
+              <select class="form-select form-select-sm" id="filterType" style="width: 150px;">
+                <option value="">All Types</option>
+                <option value="PURCHASE">Purchase</option>
+                <option value="REDEMPTION">Redemption</option>
+                <option value="SWITCH_IN">Switch In</option>
+                <option value="SWITCH_OUT">Switch Out</option>
+                <option value="DIVIDEND_REINVEST">Dividend Reinvest</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          {% if transactions %}
+            <div class="table-responsive">
+              <table class="table table-hover" id="transactionsTable">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Fund</th>
+                    <th>Type</th>
+                    <th>Units</th>
+                    <th>NAV</th>
+                    <th>Amount</th>
+                    <th>Folio</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for tx in transactions %}
+                    <tr data-type="{{ tx.transaction_type }}">
+                      <td>
+                        <small>{{ tx.transaction_date|date:"d M Y" }}</small>
+                      </td>
+                      <td>
+                        <div>
+                          <strong>{{ tx.fund.scheme_name|truncatechars:40 }}</strong>
+                          {% if tx.fund.fund_house %}
+                            <br><small class="text-muted">{{ tx.fund.fund_house }}</small>
+                          {% endif %}
+                        </div>
+                      </td>
+                      <td>
+                        {% if tx.transaction_type == 'PURCHASE' %}
+                          <span class="badge bg-success">Purchase</span>
+                        {% elif tx.transaction_type == 'REDEMPTION' %}
+                          <span class="badge bg-danger">Redemption</span>
+                        {% elif tx.transaction_type == 'SWITCH_IN' %}
+                          <span class="badge bg-info">Switch In</span>
+                        {% elif tx.transaction_type == 'SWITCH_OUT' %}
+                          <span class="badge bg-warning">Switch Out</span>
+                        {% elif tx.transaction_type == 'DIVIDEND_REINVEST' %}
+                          <span class="badge bg-primary">Dividend Reinvest</span>
+                        {% else %}
+                          <span class="badge bg-secondary">{{ tx.transaction_type }}</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <span class="fw-semibold">{{ tx.units|floatformat:4 }}</span>
+                      </td>
+                      <td>₹{{ tx.nav|floatformat:4 }}</td>
+                      <td>
+                        <span class="fw-semibold">₹{{ tx.amount|floatformat:2 }}</span>
+                      </td>
+                      <td>
+                        <small>{{ tx.folio_number|default:"-" }}</small>
+                      </td>
+                      <td>
+                        {% if tx.is_processed %}
+                          <span class="badge bg-success" title="Processed successfully">
+                            <i class="bi bi-check-circle"></i>
+                          </span>
+                        {% else %}
+                          <span class="badge bg-warning" title="Not processed">
+                            <i class="bi bi-clock"></i>
+                          </span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="text-center py-5">
+              <i class="bi bi-list-ul text-muted" style="font-size: 3rem;"></i>
+              <h5 class="mt-3 text-muted">No Transactions Found</h5>
+              <p class="text-muted">This import doesn't contain any transaction data.</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const searchInput = document.getElementById('searchTransactions');
+  const filterSelect = document.getElementById('filterType');
+  const table = document.getElementById('transactionsTable');
+  const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+  function filterTable() {
+    const searchTerm = searchInput.value.toLowerCase();
+    const filterType = filterSelect.value;
+
+    for (let row of rows) {
+      const text = row.textContent.toLowerCase();
+      const type = row.getAttribute('data-type');
+      
+      const matchesSearch = text.includes(searchTerm);
+      const matchesType = !filterType || type === filterType;
+      
+      row.style.display = matchesSearch && matchesType ? '' : 'none';
+    }
+  }
+
+  searchInput.addEventListener('input', filterTable);
+  filterSelect.addEventListener('change', filterTable);
+});
+
+function recalculateXIRR() {
+  if (confirm('Recalculate XIRR for all funds in this import? This may take a few moments.')) {
+    fetch('/dashboard/recalculate-xirr/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({ cas_import_id: "{{ cas_import.id }}" })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('XIRR recalculated successfully!');
+        location.reload();
+      } else {
+        alert('Error recalculating XIRR: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      alert('Error recalculating XIRR. Please try again.');
+    });
+  }
+}
+
+// Helper function to get CSRF token
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+</script>
+{% endblock %}

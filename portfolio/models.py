@@ -6,6 +6,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from funds.models import MutualFund
 import decimal
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 
 def format_indian_currency(amount):
@@ -32,8 +33,6 @@ def format_indian_currency(amount):
 class Portfolio(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='portfolio')
     name = models.CharField(max_length=200, default='My Portfolio')
-    kite_access_token = models.CharField(max_length=500, blank=True)
-    kite_connected_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -83,12 +82,34 @@ class PortfolioFund(models.Model):
 
 
 class PurchaseLot(models.Model):
+    SOURCE_CHOICES = [
+        ('MANUAL', 'Manual Entry'),
+        ('CAS', 'CAS Parser'),
+    ]
+    
+    TRANSACTION_TYPE_CHOICES = [
+        ('PURCHASE', 'Purchase'),
+        ('REDEMPTION', 'Redemption'),
+        ('SWITCH_IN', 'Switch In'),
+        ('SWITCH_OUT', 'Switch Out'),
+        ('DIVIDEND_REINVEST', 'Dividend Reinvest'),
+        ('HOLDING', 'Current Holding'),
+    ]
+    
     portfolio_fund = models.ForeignKey(PortfolioFund, on_delete=models.CASCADE, related_name='lots')
     units = models.DecimalField(max_digits=16, decimal_places=4)
     avg_nav = models.DecimalField(max_digits=14, decimal_places=4)
     purchase_date = models.DateField()
     notes = models.CharField(max_length=300, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    # CAS Parser integration fields
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='MANUAL')
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPE_CHOICES, default='PURCHASE')
+    cas_transaction_id = models.CharField(max_length=100, blank=True, null=True)
+    folio_number = models.CharField(max_length=50, blank=True, null=True)
+    original_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    is_open = models.BooleanField(default=True)
 
     class Meta:
         ordering = ['purchase_date']
@@ -118,11 +139,11 @@ class AssetAllocation(models.Model):
     
     # Asset class allocation percentages (should sum to 100)
     equity_percentage = models.DecimalField(
-        max_digits=5, decimal_places=2, default=60,
+        max_digits=5, decimal_places=2, default=75,
         validators=[MinValueValidator(0), MaxValueValidator(100)]
     )
     debt_percentage = models.DecimalField(
-        max_digits=5, decimal_places=2, default=30,
+        max_digits=5, decimal_places=2, default=15,
         validators=[MinValueValidator(0), MaxValueValidator(100)]
     )
     gold_percentage = models.DecimalField(
@@ -132,11 +153,11 @@ class AssetAllocation(models.Model):
     
     # Equity cap allocation percentages (should sum to 100)
     large_cap_percentage = models.DecimalField(
-        max_digits=5, decimal_places=2, default=50,
+        max_digits=5, decimal_places=2, default=60,
         validators=[MinValueValidator(0), MaxValueValidator(100)]
     )
     mid_cap_percentage = models.DecimalField(
-        max_digits=5, decimal_places=2, default=30,
+        max_digits=5, decimal_places=2, default=20,
         validators=[MinValueValidator(0), MaxValueValidator(100)]
     )
     small_cap_percentage = models.DecimalField(
@@ -230,49 +251,120 @@ class RebalanceAction(models.Model):
             return f"{self.action} ₹{format_indian_currency(self.amount)} of {self.fund.scheme_name}"
 
 
-class KiteCredentials(models.Model):
-    """Store Kite API credentials securely (system-wide)"""
-    api_key = models.CharField(max_length=100, unique=True)
-    encrypted_api_secret = models.TextField()
-    is_active = models.BooleanField(default=True)
+class CASImport(models.Model):
+    """Track CAS import sessions and their status"""
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed'),
+        ('PARTIAL', 'Partial Success'),
+        ('DUPLICATE', 'Duplicate'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cas_imports')
+    filename = models.CharField(max_length=255)
+    file_size = models.IntegerField()
+    file_hash = models.CharField(max_length=32, blank=True, null=True, db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    skipped_transactions = models.PositiveIntegerField(default=0)
+    
+    # CAS Parser response data
+    investor_name = models.CharField(max_length=200, blank=True, null=True)
+    investor_pan = models.CharField(max_length=10, blank=True, null=True)
+    cas_type = models.CharField(max_length=20, blank=True, null=True)
+    statement_period_from = models.DateField(null=True, blank=True, db_index=True)
+    statement_period_to = models.DateField(null=True, blank=True, db_index=True)
+    
+    # Processing results
+    total_value = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    funds_processed = models.IntegerField(default=0)
+    transactions_processed = models.IntegerField(default=0)
+    errors_count = models.IntegerField(default=0)
+    
+    # Error handling
+    error_message = models.TextField(blank=True, null=True)
+    parser_response = models.JSONField(default=dict, blank=True)
+    
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
     
-    # Encryption key (in production, this should be stored securely)
-    _encryption_key = None
-    
-    @classmethod
-    def get_encryption_key(cls):
-        """Get or create encryption key"""
-        if cls._encryption_key is None:
-            # In production, use a proper key management system
-            # For now, derive from Django's SECRET_KEY
-            from django.conf import settings
-            import hashlib
-            import base64
-            key = base64.urlsafe_b64encode(hashlib.sha256(settings.SECRET_KEY.encode()).digest())
-            cls._encryption_key = key
-        return cls._encryption_key
-    
-    def set_api_secret(self, secret):
-        """Encrypt and store API secret"""
-        from cryptography.fernet import Fernet
-        f = Fernet(self.get_encryption_key())
-        self.encrypted_api_secret = f.encrypt(secret.encode()).decode()
-    
-    def get_api_secret(self):
-        """Decrypt and return API secret"""
-        from cryptography.fernet import Fernet
-        f = Fernet(self.get_encryption_key())
-        return f.decrypt(self.encrypted_api_secret.encode()).decode()
-    
-    @classmethod
-    def get_active_credentials(cls):
-        """Get the active Kite credentials"""
-        try:
-            return cls.objects.filter(is_active=True).first()
-        except cls.DoesNotExist:
-            return None
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['created_at']),
+        ]
     
     def __str__(self):
-        return f"Kite API: {self.api_key[:8]}..."
+        return f"CAS Import - {self.user.username} - {self.filename} ({self.status})"
+    
+    @property
+    def duration(self):
+        if self.started_at and self.completed_at:
+            return self.completed_at - self.started_at
+        return None
+    
+    def mark_started(self):
+        self.status = 'PROCESSING'
+        self.started_at = timezone.now()
+        self.save(update_fields=['status', 'started_at'])
+    
+    def mark_completed(self, success=True, error_message=None):
+        self.status = 'COMPLETED' if success else 'FAILED'
+        self.completed_at = timezone.now()
+        if error_message:
+            self.error_message = error_message
+        self.save(update_fields=['status', 'completed_at', 'error_message'])
+
+
+class CASTransaction(models.Model):
+    """Detailed transaction records from CAS imports"""
+    TRANSACTION_TYPE_CHOICES = [
+        ('PURCHASE', 'Purchase'),
+        ('REDEMPTION', 'Redemption'),
+        ('SWITCH_IN', 'Switch In'),
+        ('SWITCH_OUT', 'Switch Out'),
+        ('DIVIDEND_PAYOUT', 'Dividend Payout'),
+        ('DIVIDEND_REINVEST', 'Dividend Reinvest'),
+    ]
+    
+    cas_import = models.ForeignKey(CASImport, on_delete=models.CASCADE, related_name='transactions')
+    portfolio_fund = models.ForeignKey(PortfolioFund, on_delete=models.CASCADE, related_name='cas_transactions', null=True, blank=True)
+    fund = models.ForeignKey(MutualFund, on_delete=models.CASCADE, related_name='cas_transactions')
+    
+    # Transaction details
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPE_CHOICES)
+    transaction_date = models.DateField()
+    units = models.DecimalField(max_digits=16, decimal_places=4)
+    nav = models.DecimalField(max_digits=14, decimal_places=4)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    
+    # Additional details
+    folio_number = models.CharField(max_length=50, blank=True, null=True)
+    balance_units = models.DecimalField(max_digits=16, decimal_places=4, null=True, blank=True)
+    
+    # Original CAS data
+    raw_data = models.JSONField(default=dict, blank=True)
+    
+    # Processing status
+    is_processed = models.BooleanField(default=False)
+    purchase_lot = models.ForeignKey(PurchaseLot, on_delete=models.SET_NULL, null=True, blank=True, related_name='cas_transaction')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['transaction_date']
+        indexes = [
+            models.Index(fields=['cas_import', 'transaction_date']),
+            models.Index(fields=['fund', 'transaction_date']),
+            models.Index(fields=['transaction_type']),
+        ]
+        unique_together = ['cas_import', 'fund', 'transaction_date', 'transaction_type', 'units', 'nav']
+    
+    def __str__(self):
+        return f"{self.fund.scheme_name} - {self.transaction_type} - {self.transaction_date}: {self.units} @ {self.nav}"
+
+

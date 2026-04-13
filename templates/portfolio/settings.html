@@ -55,17 +55,29 @@
               <div class="col-4">
                 <label class="form-label small">Equity %</label>
                 <input type="number" class="form-control form-control-sm" name="equity_percentage" 
-                       value="{{ asset_allocation.equity_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.equity_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateAssetTotals()">
               </div>
               <div class="col-4">
                 <label class="form-label small">Debt %</label>
                 <input type="number" class="form-control form-control-sm" name="debt_percentage" 
-                       value="{{ asset_allocation.debt_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.debt_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateAssetTotals()">
               </div>
               <div class="col-4">
                 <label class="form-label small">Gold %</label>
                 <input type="number" class="form-control form-control-sm" name="gold_percentage" 
-                       value="{{ asset_allocation.gold_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.gold_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateAssetTotals()">
+              </div>
+            </div>
+            <div class="mt-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="small text-secondary">Total:</span>
+                <span id="assetTotal" class="small fw-bold">100%</span>
+              </div>
+              <div class="progress" style="height: 4px;">
+                <div id="assetProgress" class="progress-bar bg-success" style="width: 100%"></div>
               </div>
             </div>
           </div>
@@ -76,17 +88,29 @@
               <div class="col-4">
                 <label class="form-label small">Large Cap %</label>
                 <input type="number" class="form-control form-control-sm" name="large_cap_percentage" 
-                       value="{{ asset_allocation.large_cap_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.large_cap_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateCapTotals()">
               </div>
               <div class="col-4">
                 <label class="form-label small">Mid Cap %</label>
                 <input type="number" class="form-control form-control-sm" name="mid_cap_percentage" 
-                       value="{{ asset_allocation.mid_cap_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.mid_cap_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateCapTotals()">
               </div>
               <div class="col-4">
                 <label class="form-label small">Small Cap %</label>
                 <input type="number" class="form-control form-control-sm" name="small_cap_percentage" 
-                       value="{{ asset_allocation.small_cap_percentage|floatformat:0 }}" min="0" max="100" required>
+                       value="{{ asset_allocation.small_cap_percentage|floatformat:0 }}" min="0" max="100" required
+                       onchange="updateCapTotals()">
+              </div>
+            </div>
+            <div class="mt-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="small text-secondary">Total:</span>
+                <span id="capTotal" class="small fw-bold">100%</span>
+              </div>
+              <div class="progress" style="height: 4px;">
+                <div id="capProgress" class="progress-bar bg-success" style="width: 100%"></div>
               </div>
             </div>
           </div>
@@ -192,38 +216,176 @@ DEFAULT_FROM_EMAIL=your@gmail.com
     </div>
   </div>
 
-  <!-- Zerodha Kite -->
-  <div class="col-lg-6">
+  
+<!-- Danger Zone -->
+<div class="row mt-4">
+  <div class="col-12">
     <div class="mft-card">
       <div class="mft-card-header">
-        <h5 class="mft-card-title"><i class="bi bi-plug me-2"></i>Zerodha Kite</h5>
-        {% if kite_connected %}
-        <span class="status-chip status-ok">Connected</span>
-        {% else %}
-        <span class="status-chip status-neutral">Optional</span>
-        {% endif %}
+        <h5 class="mft-card-title"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Danger Zone</h5>
       </div>
       <div class="p-4">
-        <p class="text-secondary small">Import your Zerodha portfolio automatically. The app works fully without this.</p>
-        {% if kite_api_key %}
-        <div class="settings-info-row">
-          <span>API Key</span><strong class="font-mono">{{ kite_api_key|slice:":8" }}...</strong>
+        <div class="row align-items-center">
+          <div class="col-md-8">
+            <p class="text-secondary mb-0">
+              <strong>Reset Entire Portfolio</strong><br>
+              This will permanently delete all funds and transactions from your portfolio. This action cannot be undone.
+            </p>
+            <small class="text-muted">
+              <i class="bi bi-shield-check me-1"></i>Your account settings and allocations will be preserved.
+            </small>
+          </div>
+          <div class="col-md-4 text-end">
+            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#resetPortfolioModal">
+              <i class="bi bi-trash3 me-2"></i>Reset Portfolio
+            </button>
+          </div>
         </div>
-        {% if not kite_connected %}
-        <a href="https://kite.zerodha.com/connect/login?api_key={{ kite_api_key }}" class="btn mft-btn-outline w-100 mt-3" target="_blank">
-          <i class="bi bi-box-arrow-up-right me-2"></i>Connect Zerodha
-        </a>
-        {% else %}
-        <div class="mt-3 text-success"><i class="bi bi-check-circle me-1"></i>Portfolio sync active</div>
-        {% endif %}
-        {% else %}
-        <div class="env-snippet">KITE_API_KEY=your_api_key
-KITE_API_SECRET=your_secret</div>
-        <p class="text-secondary small mt-2">Get credentials at <a href="https://developers.kite.trade" target="_blank">developers.kite.trade</a></p>
-        <p class="text-secondary small mt-2">Add these to your <code>.env</code> file and restart the server.</p>
-        {% endif %}
       </div>
     </div>
   </div>
 </div>
+
+<!-- Reset Portfolio Modal -->
+<div class="modal fade" id="resetPortfolioModal" tabindex="-1" aria-labelledby="resetPortfolioModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-light border-secondary">
+      <div class="modal-header">
+        <h5 class="modal-title" id="resetPortfolioModalLabel">
+          <i class="bi bi-exclamation-triangle text-danger me-2"></i>Reset Entire Portfolio
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger" role="alert">
+          <i class="bi bi-info-circle me-2"></i>
+          <strong>This action cannot be undone!</strong>
+        </div>
+        
+        <p>This will permanently delete:</p>
+        <ul>
+          <li>All funds from your portfolio</li>
+          <li>All purchase lots and transactions</li>
+          <li>All XIRR calculations</li>
+          <li>CAS import history</li>
+        </ul>
+        
+        <p class="mb-0"><strong>What will be preserved:</strong></p>
+        <ul>
+          <li>Your account settings</li>
+          <li>Asset allocation preferences</li>
+        </ul>
+        
+        <div class="mt-3">
+          <label class="form-label">Type <code class="bg-secondary">RESET</code> to confirm:</label>
+          <input type="text" class="form-control bg-dark text-light border-secondary" id="resetConfirmText" placeholder="Type RESET">
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form method="post" style="display: inline;">
+          {% csrf_token %}
+          <button type="submit" name="reset_portfolio" class="btn btn-danger" id="resetBtn" disabled>
+            <i class="bi bi-trash3 me-2"></i>Yes, Reset Everything
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize totals on page load
+  updateAssetTotals();
+  updateCapTotals();
+  
+  const allocationForm = document.querySelector('form[action=""][method="post"]');
+  if (allocationForm) {
+    allocationForm.addEventListener('submit', function(e) {
+      const equityPercent = parseFloat(document.querySelector('input[name="equity_percentage"]').value) || 0;
+      const debtPercent = parseFloat(document.querySelector('input[name="debt_percentage"]').value) || 0;
+      const goldPercent = parseFloat(document.querySelector('input[name="gold_percentage"]').value) || 0;
+      
+      const assetTotal = equityPercent + debtPercent + goldPercent;
+      
+      if (Math.abs(assetTotal - 100) > 0.01) {
+        e.preventDefault();
+        alert(`Asset allocation must sum to 100%. Currently: ${assetTotal.toFixed(1)}%\n\nPlease adjust the percentages so they add up to exactly 100%.`);
+        return false;
+      }
+      
+      const largeCap = parseFloat(document.querySelector('input[name="large_cap_percentage"]').value) || 0;
+      const midCap = parseFloat(document.querySelector('input[name="mid_cap_percentage"]').value) || 0;
+      const smallCap = parseFloat(document.querySelector('input[name="small_cap_percentage"]').value) || 0;
+      
+      const capTotal = largeCap + midCap + smallCap;
+      
+      if (Math.abs(capTotal - 100) > 0.01) {
+        e.preventDefault();
+        alert(`Equity cap allocation must sum to 100%. Currently: ${capTotal.toFixed(1)}%\n\nPlease adjust the cap percentages so they add up to exactly 100%.`);
+        return false;
+      }
+    });
+  }
+});
+
+function updateAssetTotals() {
+  const equityPercent = parseFloat(document.querySelector('input[name="equity_percentage"]').value) || 0;
+  const debtPercent = parseFloat(document.querySelector('input[name="debt_percentage"]').value) || 0;
+  const goldPercent = parseFloat(document.querySelector('input[name="gold_percentage"]').value) || 0;
+  
+  const total = equityPercent + debtPercent + goldPercent;
+  const totalElement = document.getElementById('assetTotal');
+  const progressElement = document.getElementById('assetProgress');
+  
+  totalElement.textContent = total.toFixed(1) + '%';
+  
+  if (Math.abs(total - 100) < 0.01) {
+    totalElement.className = 'small fw-bold text-success';
+    progressElement.className = 'progress-bar bg-success';
+  } else {
+    totalElement.className = 'small fw-bold text-danger';
+    progressElement.className = 'progress-bar bg-danger';
+  }
+  
+  progressElement.style.width = Math.min(total, 100) + '%';
+}
+
+function updateCapTotals() {
+  const largeCap = parseFloat(document.querySelector('input[name="large_cap_percentage"]').value) || 0;
+  const midCap = parseFloat(document.querySelector('input[name="mid_cap_percentage"]').value) || 0;
+  const smallCap = parseFloat(document.querySelector('input[name="small_cap_percentage"]').value) || 0;
+  
+  const total = largeCap + midCap + smallCap;
+  const totalElement = document.getElementById('capTotal');
+  const progressElement = document.getElementById('capProgress');
+  
+  totalElement.textContent = total.toFixed(1) + '%';
+  
+  if (Math.abs(total - 100) < 0.01) {
+    totalElement.className = 'small fw-bold text-success';
+    progressElement.className = 'progress-bar bg-success';
+  } else {
+    totalElement.className = 'small fw-bold text-danger';
+    progressElement.className = 'progress-bar bg-danger';
+  }
+  
+  progressElement.style.width = Math.min(total, 100) + '%';
+}
+
+// Reset portfolio confirmation
+const resetConfirmText = document.getElementById('resetConfirmText');
+const resetBtn = document.getElementById('resetBtn');
+
+if (resetConfirmText && resetBtn) {
+  resetConfirmText.addEventListener('input', function() {
+    if (this.value === 'RESET') {
+      resetBtn.disabled = false;
+    } else {
+      resetBtn.disabled = true;
+    }
+  });
+}
+</script>
 {% endblock %}

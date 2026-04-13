@@ -1,25 +1,29 @@
 import time
+import json
+import re
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.shortcuts import render, get_object_or_404, redirect
+from django.core.management import call_command
 from .api_cron import cron_refresh_nav
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Sum, Q, F
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from datetime import date, datetime
 import logging
 import hashlib
 
-from .models import Portfolio, PortfolioFund, PurchaseLot, XIRRCache
+from .models import Portfolio, PortfolioFund, PurchaseLot, XIRRCache, CASImport, CASTransaction
 from funds.models import MutualFund, NAVHistory
 from factsheets.models import Factsheet, FactsheetDiff
 from .xirr import calculate_portfolio_xirr, calculate_fund_xirr
 from .services.rebalance import generate_rebalance_suggestion, get_rebalance_summary
 from funds.services import search_funds, fetch_fund_nav, seed_fund_database
-from .kite_integration import KITE_API_KEY, KITE_API_SECRET
+from .casparser_service import cas_parser_service
 
 logger = logging.getLogger(__name__)
 
@@ -400,7 +404,6 @@ def settings_view(request):
     from .services.rebalance import calculate_current_allocation
     
     portfolio, _ = Portfolio.objects.get_or_create(user=request.user)
-    kite_connected = bool(portfolio.kite_access_token)
     smtp_configured = bool(django_settings.EMAIL_HOST_USER)
     
     # Get or create asset allocation
@@ -446,21 +449,55 @@ def settings_view(request):
             asset_allocation.save()
             messages.success(request, 'Asset allocation settings saved successfully.')
         except ValidationError as e:
-            messages.error(request, f'Error: {e}')
+            # Extract the actual error messages from ValidationError dict
+            if hasattr(e, 'error_dict'):
+                for field, errors in e.error_dict.items():
+                    for error in errors:
+                        if field == '__all__':
+                            messages.error(request, str(error))
+                        else:
+                            messages.error(request, f"{field.replace('_', ' ').title()}: {error}")
+            else:
+                messages.error(request, str(e))
         except (ValueError, KeyError):
             messages.error(request, 'Invalid input values.')
         return redirect('settings')
-
+    
+    # Handle portfolio reset
+    if request.method == 'POST' and 'reset_portfolio' in request.POST:
+        try:
+            # Get user's portfolio
+            user_portfolio = Portfolio.objects.get(user=request.user)
+            
+            # Count what will be deleted
+            funds_count = user_portfolio.holdings.count()
+            lots_count = PurchaseLot.objects.filter(portfolio_fund__portfolio=user_portfolio).count()
+            cas_imports_count = CASImport.objects.filter(user=request.user).count()
+            
+            # Delete all related data
+            # Delete CAS imports (will cascade delete transactions)
+            CASImport.objects.filter(user=request.user).delete()
+            # Delete purchase lots
+            PurchaseLot.objects.filter(portfolio_fund__portfolio=user_portfolio).delete()
+            # Delete portfolio funds
+            user_portfolio.holdings.all().delete()
+            # Clear XIRR cache
+            XIRRCache.objects.filter(portfolio=user_portfolio).delete()
+            
+            messages.success(request, f'Portfolio reset successfully! Deleted {funds_count} funds, {lots_count} purchase lots, and {cas_imports_count} CAS imports.')
+            
+        except Portfolio.DoesNotExist:
+            messages.error(request, 'No portfolio found to reset.')
+        except Exception as e:
+            messages.error(request, f'Error resetting portfolio: {str(e)}')
+        
+        return redirect('settings')
+    
     from factsheets.models import FactsheetFetchLog
     recent_logs = FactsheetFetchLog.objects.order_by('-started_at')[:5]
 
-    # Get Kite credentials from settings
-    kite_api_key = django_settings.KITE_API_KEY
-
     return render(request, 'portfolio/settings.html', {
         'portfolio': portfolio,
-        'kite_connected': kite_connected,
-        'kite_api_key': kite_api_key,
         'smtp_configured': smtp_configured,
         'recent_logs': recent_logs,
         'weight_threshold': django_settings.WEIGHT_CHANGE_THRESHOLD,
@@ -597,41 +634,153 @@ def rebalance_view(request):
     })
 
 
-@login_required
-def kite_login(request):
-    """Redirect user to Kite for authentication"""
-    from .kite_integration import initiate_kite_login
-    return initiate_kite_login(request)
 
+
+# CAS Parser Integration Views
 
 @login_required
-def kite_callback(request):
-    """Handle callback from Kite after authentication"""
-    from .kite_integration import kite_callback as handle_callback
-    return handle_callback(request)
+def cas_import(request):
+    """CAS import landing page - redirect to unified page"""
+    return redirect('cas_unified')
 
-
-def kite_postback(request):
-    """Handle postbacks from Kite (order updates, etc.)"""
-    from .kite_integration import kite_postback as handle_postback
-    return handle_postback(request)
+@login_required
+def cas_unified(request):
+    """Unified CAS import page - upload or download"""
+    return render(request, 'portfolio/cas_unified.html')
 
 
 @login_required
-def sync_kite_holdings(request):
-    """Manually sync holdings from Kite"""
-    from .kite_integration import fetch_and_sync_holdings, get_kite_session
+def cas_upload(request):
+    """Handle CAS PDF upload and processing"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method allowed'}, status=405)
     
-    if not get_kite_session(request):
-        messages.error(request, 'Please connect your Kite account first.')
-        return redirect('dashboard')
+    if 'cas_file' not in request.FILES:
+        return JsonResponse({'error': 'No file uploaded'}, status=400)
+    
+    cas_file = request.FILES['cas_file']
+    password = request.POST.get('password', '').strip()
+    
+    if not password:
+        return JsonResponse({'error': 'Password (PAN) is required'}, status=400)
+    
+    # Validate file type
+    if not cas_file.name.lower().endswith('.pdf'):
+        return JsonResponse({'error': 'Only PDF files are allowed'}, status=400)
+    
+    # Validate file size (max 10MB)
+    if cas_file.size > 10 * 1024 * 1024:
+        return JsonResponse({'error': 'File size must be less than 10MB'}, status=400)
     
     try:
-        fetch_and_sync_holdings(request)
-        messages.success(request, 'Your mutual fund holdings have been synced from Kite!')
+        # Check if this is a duplicate by looking for existing imports first
+        import hashlib
+        file_hash = hashlib.md5()
+        cas_file.seek(0)
+        for chunk in iter(lambda: cas_file.read(4096), b""):
+            file_hash.update(chunk)
+        cas_file.seek(0)
+        file_hash = file_hash.hexdigest()
+        
+        # Check for existing completed import
+        from portfolio.models import CASImport
+        existing_import = CASImport.objects.filter(
+            user=request.user,
+            file_hash=file_hash,
+            status='COMPLETED'
+        ).first()
+        
+        if existing_import:
+            # Return existing import as duplicate
+            return JsonResponse({
+                'success': True,
+                'import_id': existing_import.id,
+                'status': 'DUPLICATE',
+                'funds_processed': existing_import.funds_processed,
+                'transactions_processed': existing_import.transactions_processed,
+                'error_message': f'Duplicate file. Original uploaded on {existing_import.created_at}',
+                'message': 'Duplicate file detected'
+            })
+        
+        # Process the CAS file
+        cas_import = cas_parser_service.parse_cas_pdf(cas_file, password, request.user)
+        
+        return JsonResponse({
+            'success': True,
+            'import_id': cas_import.id,
+            'status': cas_import.status,
+            'funds_processed': cas_import.funds_processed,
+            'transactions_processed': cas_import.transactions_processed,
+            'message': 'CAS file uploaded successfully. Processing started...'
+        })
+        
     except Exception as e:
-        logger.error(f"Error syncing Kite holdings: {e}")
-        messages.error(request, f'Error syncing holdings: {str(e)}')
+        logger.error(f"Error uploading CAS file: {e}")
+        return JsonResponse({'error': f'Processing failed: {str(e)}'}, status=500)
+
+
+@login_required
+
+
+@login_required
+def cas_import_detail(request, import_id):
+    """Show detailed CAS import results"""
+    cas_import = get_object_or_404(CASImport, id=import_id, user=request.user)
+    transactions = cas_import.transactions.select_related('fund', 'portfolio_fund').order_by('transaction_date')
     
-    return redirect('dashboard')
+    return render(request, 'portfolio/cas_import_detail.html', {
+        'cas_import': cas_import,
+        'transactions': transactions
+    })
+
+
+
+
+@login_required
+def api_cas_import_progress(request):
+    """API endpoint to check CAS import progress"""
+    import_id = request.GET.get('import_id')
+    
+    if not import_id:
+        return JsonResponse({'error': 'import_id is required'}, status=400)
+    
+    try:
+        cas_import = CASImport.objects.get(id=import_id, user=request.user)
+        
+        response_data = {
+            'status': cas_import.status,
+            'funds_processed': cas_import.funds_processed,
+            'transactions_processed': cas_import.transactions_processed,
+            'errors_count': cas_import.errors_count,
+            'completed_at': cas_import.completed_at.isoformat() if cas_import.completed_at else None,
+            'error_message': cas_import.error_message
+        }
+        
+        return JsonResponse(response_data)
+        
+    except CASImport.DoesNotExist:
+        return JsonResponse({'error': 'Import not found'}, status=404)
+
+
+@csrf_exempt
+def run_migrations_api(request):
+    """API endpoint to run migrations - for production deployment"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+    
+    # Simple security check - commented out for testing
+    # if not request.headers.get('Authorization') == 'Bearer migrate-token':
+    #     return JsonResponse({'error': 'Unauthorized'}, status=401)
+    
+    try:
+        call_command('migrate', '--noinput')
+        return JsonResponse({
+            'success': True,
+            'message': 'Migrations applied successfully'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
