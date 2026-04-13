@@ -67,7 +67,25 @@ def dashboard(request):
     total_gain_pct = (total_gain / total_invested * 100) if total_invested > 0 else Decimal('0')
 
     portfolio_xirr_obj = XIRRCache.objects.filter(portfolio=portfolio, portfolio_fund=None).first()
-    portfolio_xirr = float(portfolio_xirr_obj.xirr_value) * 100 if portfolio_xirr_obj and portfolio_xirr_obj.xirr_value else None
+    portfolio_xirr = None
+    
+    # Calculate fresh XIRR if cache is old (>24 hours) or doesn't exist
+    from datetime import timedelta
+    cache_age_threshold = timezone.now() - timedelta(hours=24)
+    
+    if not portfolio_xirr_obj or portfolio_xirr_obj.calculated_at < cache_age_threshold:
+        logger.info(f"XIRR cache is old or missing, calculating fresh XIRR for portfolio {portfolio.name}")
+        try:
+            from .xirr import calculate_portfolio_xirr
+            portfolio_xirr_value = calculate_portfolio_xirr(portfolio)
+            portfolio_xirr = float(portfolio_xirr_value) * 100 if portfolio_xirr_value is not None else None
+            logger.info(f"Fresh portfolio XIRR calculated: {portfolio_xirr:.2f}%")
+        except Exception as e:
+            logger.error(f"Failed to calculate fresh portfolio XIRR: {e}")
+            # Fall back to cached value if available
+            portfolio_xirr = float(portfolio_xirr_obj.xirr_value) * 100 if portfolio_xirr_obj and portfolio_xirr_obj.xirr_value else None
+    else:
+        portfolio_xirr = float(portfolio_xirr_obj.xirr_value) * 100 if portfolio_xirr_obj and portfolio_xirr_obj.xirr_value else None
 
     return render(request, 'portfolio/dashboard.html', {
         'portfolio': portfolio,
@@ -375,6 +393,8 @@ def refresh_all_nav(request):
         messages.error(request, f'Failed to refresh any NAV. Please try again later.')
     
     return redirect('dashboard')
+
+
 
 
 @login_required
