@@ -4,17 +4,9 @@
     {
       "src": "api/index.py",
       "use": "@vercel/python"
-    },
-    {
-      "src": "api/migrate.py",
-      "use": "@vercel/python"
     }
   ],
   "routes": [
-    {
-      "src": "/api/migrate",
-      "dest": "/api/migrate.py"
-    },
     {
       "src": "/(.*)",
       "dest": "/api/index.py"
@@ -23,7 +15,7 @@
   "env": {
     "DJANGO_SETTINGS_MODULE": "config.settings"
   },
-  "installCommand": "pip install -r requirements.txt",
+  "installCommand": "pip install -r requirements-vercel.txt",
   "buildCommand": "python manage.py migrate",
   "regions": ["bom1"],
   "crons": [
@@ -31,5 +23,10 @@
       "path": "/api/cron/refresh-nav/",
       "schedule": "0 7 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 30
+    }
+  }
 }
