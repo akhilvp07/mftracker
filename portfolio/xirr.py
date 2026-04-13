@@ -59,18 +59,8 @@ def calculate_fund_xirr(portfolio_fund):
         elif lot.units < 0:  # Redemption - money coming in
             cashflows.append((lot.purchase_date, float(abs(lot.units) * lot.avg_nav)))
     
-    # Add redemption transactions from CAS as inflows
-    try:
-        cas_redemptions = CASTransaction.objects.filter(
-            portfolio_fund=portfolio_fund,
-            transaction_type__in=['REDEMPTION', 'SWITCH_OUT']
-        ).order_by('transaction_date')
-        
-        for redemption in cas_redemptions:
-            cashflows.append((redemption.transaction_date, float(redemption.amount)))
-            
-    except Exception as e:
-        logger.warning(f"Error including CAS redemptions in XIRR: {e}")
+    # Note: CAS redemptions are already included as negative lots
+    # No need to add them separately to avoid double-counting
 
     current_nav = portfolio_fund.fund.current_nav
     if not current_nav:
@@ -120,18 +110,8 @@ def calculate_portfolio_xirr(portfolio):
     
     cashflows.append((date.today(), float(total_current_value)))
     
-    # Add redemption transactions from CAS as inflows
-    try:
-        cas_redemptions = CASTransaction.objects.filter(
-            portfolio_fund__portfolio=portfolio,
-            transaction_type__in=['REDEMPTION', 'SWITCH_OUT']
-        ).order_by('transaction_date')
-        
-        for redemption in cas_redemptions:
-            cashflows.append((redemption.transaction_date, float(redemption.amount)))
-            
-    except Exception as e:
-        logger.warning(f"Error including CAS redemptions in portfolio XIRR: {e}")
+    # Note: CAS redemptions are already included as negative lots
+    # No need to add them separately to avoid double-counting
 
     rate = xirr(cashflows) if cashflows else None
 
