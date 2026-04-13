@@ -1,4 +1,4 @@
-# Exclude large directories and files
+# Exclude Python cache and compiled files
 __pycache__/
 *.pyc
 *.pyo
@@ -22,15 +22,6 @@ coverage.xml
 .pytest_cache
 .hypothesis
 
-# Exclude media and large static files
-media/
-*.pdf
-*.zip
-*.tar.gz
-*.csv
-*.xlsx
-*.xls
-
 # Exclude development files
 .DS_Store
 .vscode/
@@ -39,7 +30,13 @@ media/
 *.swo
 *~
 
-# Include only essential static files
-!static/css/
-!static/js/
-!static/images/
+# Exclude large media files but keep CAS PDFs for uploads
+media/*.zip
+media/*.tar.gz
+media/*.csv
+media/*.xlsx
+media/*.xls
+
+# Keep essential static files
+!static/
+!media/cas/
