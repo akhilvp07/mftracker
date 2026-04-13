@@ -116,11 +116,6 @@
           </a>
         </li>
         <li class="nav-item">
-          <a class="nav-link {% if request.resolver_match.url_name in 'cas_import cas_unified' %}active{% endif %}" href="/dashboard/cas-import/">
-            <i class="bi bi-cloud-download me-1"></i>Import from CAMS
-          </a>
-        </li>
-        <li class="nav-item">
           <a class="nav-link {% if request.resolver_match.url_name == 'rebalance' %}active{% endif %}" href="/dashboard/rebalance/">
             <i class="bi bi-arrow-left-right me-1"></i>Rebalance
           </a>
