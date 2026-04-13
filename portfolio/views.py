@@ -347,6 +347,12 @@ def refresh_all_nav(request):
             calculate_fund_xirr(holding)
             success_count += 1
             logger.info(f"Successfully refreshed NAV for {holding.fund.scheme_name}")
+            
+            # Add delay between requests to avoid rate limiting (except for last request)
+            if i < len(holdings) - 1:
+                import time
+                time.sleep(1)  # Wait 1 second between requests
+                
         except Exception as e:
             error_count += 1
             logger.error(f"Failed to refresh NAV for {holding.fund.scheme_name}: {e}")

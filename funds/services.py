@@ -3,6 +3,7 @@ import logging
 import json
 import time
 from django.utils import timezone
+from django.core.cache import cache
 from datetime import datetime, date
 from .models import MutualFund, NAVHistory, SeedStatus
 
@@ -294,6 +295,19 @@ def seed_fund_database(force=False):
 
 def fetch_fund_nav(fund, fetch_history=False):
     """Fetch current NAV (and optionally full history) for a fund."""
+    # Check cache first (cache for 4 hours)
+    cache_key = f"nav_{fund.scheme_code}"
+    cached_data = cache.get(cache_key)
+    
+    if cached_data and not fetch_history:
+        logger.info(f"Using cached NAV data for {fund.scheme_code}")
+        # Update fund from cached data
+        fund.current_nav = cached_data['nav']
+        fund.nav_date = cached_data['date']
+        fund.nav_last_updated = cached_data['updated_at']
+        fund.save()
+        return
+    
     try:
         # Always use full endpoint to ensure latest data
         import time
@@ -335,6 +349,16 @@ def fetch_fund_nav(fund, fetch_history=False):
                 fund.nav_date = nav_date
                 fund.nav_last_updated = timezone.now()
                 fund.save()
+                
+                # Cache the NAV data for 4 hours
+                cache_data = {
+                    'nav': nav_val,
+                    'date': nav_date,
+                    'updated_at': fund.nav_last_updated
+                }
+                cache.set(cache_key, cache_data, 14400)  # 4 hours = 14400 seconds
+                logger.info(f"Cached NAV data for {fund.scheme_code}")
+                
             except (ValueError, KeyError) as e:
                 logger.warning(f"Could not parse NAV for {fund.scheme_code}: {e}")
 
@@ -398,6 +422,16 @@ def _fetch_nav_from_amfi_fallback(fund):
             fund.nav_last_updated = timezone.now()
             fund.save()
             
+            # Cache the NAV data for 4 hours (even from AMFI)
+            cache_key = f"nav_{fund.scheme_code}"
+            cache_data = {
+                'nav': nav_val,
+                'date': nav_date,
+                'updated_at': fund.nav_last_updated
+            }
+            cache.set(cache_key, cache_data, 14400)  # 4 hours = 14400 seconds
+            logger.info(f"Cached NAV data from AMFI for {fund.scheme_code}")
+            
             logger.info(f"Updated NAV from AMFI for {fund.scheme_name}: {nav_val} on {nav_date}")
             return
             
@@ -407,6 +441,18 @@ def _fetch_nav_from_amfi_fallback(fund):
     
     # If we get here, the fund wasn't found
     raise ValueError(f"Fund {fund.scheme_code} not found in AMFI NAV data")
+
+
+def clear_nav_cache(fund_code=None):
+    """Clear NAV cache for a specific fund or all funds."""
+    if fund_code:
+        cache_key = f"nav_{fund_code}"
+        cache.delete(cache_key)
+        logger.info(f"Cleared NAV cache for fund {fund_code}")
+    else:
+        # Clear all NAV caches (pattern matching would require Redis backend)
+        # For now, we'll clear individual funds when they're updated
+        logger.info("Cache will be cleared for individual funds as they're updated")
 
 
 def _save_nav_history(fund, nav_data):
