@@ -298,6 +298,46 @@ def seed_fund_database(force=False):
 
 def fetch_fund_nav(fund, fetch_history=False):
     """Fetch current NAV (and optionally full history) for a fund."""
+    # Try mfdata.in first (primary source)
+    try:
+        from .mfdata_service import fetch_fund_nav as fetch_from_mfdata
+        nav_data = fetch_from_mfdata(fund.scheme_code)
+        
+        if nav_data:
+            # Update fund with rich data from mfdata.in
+            from decimal import Decimal
+            fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
+            fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
+            fund.nav_last_updated = timezone.now()
+            
+            # Update additional fields if available
+            if 'expense_ratio' in nav_data:
+                # You could add expense_ratio field to MutualFund model
+                pass
+            
+            fund.save()
+            
+            # Cache for compatibility with existing code
+            cache_key = f"nav_{fund.scheme_code}"
+            cache_data = {
+                'nav': fund.current_nav,
+                'date': fund.nav_date,
+                'updated_at': fund.nav_last_updated
+            }
+            cache.set(cache_key, cache_data, 14400)
+            
+            logger.info(f"Updated NAV from mfdata.in for {fund.scheme_name}: {fund.current_nav} on {fund.nav_date}")
+            
+            # Fetch history if requested
+            if fetch_history:
+                _fetch_nav_history_from_mfdata(fund)
+            
+            return
+            
+    except Exception as e:
+        logger.warning(f"Failed to fetch from mfdata.in for {fund.scheme_code}: {e}")
+    
+    # Fallback to original mfapi.in + AMFI chain
     global _mfapi_down, _mfapi_down_time
     
     # Check cache first (cache for 4 hours)
@@ -467,11 +507,43 @@ def _fetch_nav_from_amfi_fallback(fund):
     raise ValueError(f"Fund {fund.scheme_code} not found in AMFI NAV data")
 
 
+def _fetch_nav_history_from_mfdata(fund):
+    """Fetch NAV history from mfdata.in and save to database."""
+    try:
+        from .mfdata_service import fetch_nav_history
+        history_data = fetch_nav_history(fund.scheme_code, limit=1000)
+        
+        if not history_data:
+            return
+        
+        # Save history to database
+        for entry in history_data:
+            nav_date = datetime.strptime(entry['date'], '%Y-%m-%d').date()
+            nav_value = Decimal(str(entry['nav']))
+            
+            NAVHistory.objects.update_or_create(
+                fund=fund,
+                date=nav_date,
+                defaults={'nav': nav_value}
+            )
+        
+        logger.info(f"Saved {len(history_data)} NAV history points from mfdata.in for {fund.scheme_name}")
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch NAV history from mfdata.in for {fund.scheme_code}: {e}")
+
+
 def clear_nav_cache(fund_code=None):
     """Clear NAV cache for a specific fund or all funds."""
     if fund_code:
         cache_key = f"nav_{fund_code}"
         cache.delete(cache_key)
+        # Also clear mfdata cache
+        try:
+            from .mfdata_service import clear_mfdata_cache
+            clear_mfdata_cache(fund_code)
+        except:
+            pass
         logger.info(f"Cleared NAV cache for fund {fund_code}")
     else:
         # Clear all NAV caches (pattern matching would require Redis backend)
@@ -512,8 +584,61 @@ def _save_nav_history(fund, nav_data):
         logger.info(f"Saved {len(to_create)} NAV history entries for {fund.scheme_code}")
 
 
-def refresh_all_navs():
-    """Refresh current NAV and history for all funds in portfolios. Called by scheduler."""
+def refresh_all_nav_bulk(user_portfolio):
+    """
+    Refresh NAV for all funds using mfdata.in bulk endpoint.
+    Much faster than individual calls.
+    """
+    from portfolio.models import PortfolioFund
+    import time
+    
+    logger.info(f"Starting bulk NAV refresh for portfolio {user_portfolio.name}")
+    
+    # Get all funds
+    holdings = user_portfolio.holdings.select_related('fund').all()
+    scheme_codes = [pf.fund.scheme_code for pf in holdings]
+    
+    if not scheme_codes:
+        logger.warning("No funds found in portfolio")
+        return
+    
+    # Try mfdata.in bulk endpoint first
+    try:
+        from .mfdata_service import fetch_bulk_nav
+        bulk_nav_data = fetch_bulk_nav(scheme_codes)
+        
+        if bulk_nav_data:
+            logger.info(f"Successfully fetched bulk NAV data for {len(bulk_nav_data)} funds")
+            
+            # Update each fund
+            for pf in holdings:
+                code = pf.fund.scheme_code
+                if code in bulk_nav_data:
+                    nav_data = bulk_nav_data[code]
+                    
+                    # Update fund
+                    pf.fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
+                    pf.fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
+                    pf.fund.nav_last_updated = timezone.now()
+                    pf.fund.save()
+                    
+                    logger.info(f"Updated {pf.fund.scheme_name}: {pf.fund.current_nav}")
+            
+            return
+            
+    except Exception as e:
+        logger.error(f"Bulk NAV refresh failed: {e}")
+    
+    # Fallback to individual refresh
+    logger.info("Falling back to individual NAV refresh")
+    refresh_all_nav(user_portfolio)
+
+
+def refresh_all_nav(user_portfolio):
+    """
+    Refresh NAV for all funds in the portfolio.
+    Now optimized to skip mfapi.in when it's down.
+    """
     from portfolio.models import PortfolioFund
     
     # Get only funds that are in user portfolios
