@@ -164,7 +164,7 @@ def fetch_bulk_nav(scheme_codes):
     try:
         # Convert to strings and join
         codes_str = ','.join(str(code) for code in scheme_codes)
-        url = f"{MFDATA_BASE}/schemes/bulk?codes={codes_str}"
+        url = f"{MFDATA_BASE}/schemes/batch/lookup?scheme_codes={codes_str}"
         response_text = _fetch_with_retry(url)
         
         # Parse JSON

@@ -624,9 +624,13 @@ def refresh_all_nav_bulk(user_portfolio):
                     pf.fund.nav_last_updated = timezone.now()
                     
                     # Update additional fields if available
-                    if 'expense_ratio' in nav_data:
-                        # Could add expense_ratio field to MutualFund model
-                        pass
+                    if 'expense_ratio' in nav_data and nav_data['expense_ratio']:
+                        pf.fund.expense_ratio = Decimal(str(nav_data['expense_ratio']))
+                    
+                    if 'aum' in nav_data and nav_data['aum']:
+                        # Convert from absolute value to crores
+                        aum_cr = nav_data['aum'] / 10000000
+                        pf.fund.aum = Decimal(str(aum_cr))
                     
                     pf.fund.save()
                     updated_count += 1
