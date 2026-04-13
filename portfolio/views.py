@@ -23,7 +23,6 @@ from factsheets.models import Factsheet, FactsheetDiff
 from .xirr import calculate_portfolio_xirr, calculate_fund_xirr
 from .services.rebalance import generate_rebalance_suggestion, get_rebalance_summary
 from funds.services import search_funds, fetch_fund_nav, seed_fund_database
-from .kite_integration import KITE_API_KEY, KITE_API_SECRET
 from .casparser_service import cas_parser_service
 
 logger = logging.getLogger(__name__)
@@ -405,7 +404,6 @@ def settings_view(request):
     from .services.rebalance import calculate_current_allocation
     
     portfolio, _ = Portfolio.objects.get_or_create(user=request.user)
-    kite_connected = bool(portfolio.kite_access_token)
     smtp_configured = bool(django_settings.EMAIL_HOST_USER)
     
     # Get or create asset allocation
@@ -498,13 +496,8 @@ def settings_view(request):
     from factsheets.models import FactsheetFetchLog
     recent_logs = FactsheetFetchLog.objects.order_by('-started_at')[:5]
 
-    # Get Kite credentials from settings
-    kite_api_key = django_settings.KITE_API_KEY
-
     return render(request, 'portfolio/settings.html', {
         'portfolio': portfolio,
-        'kite_connected': kite_connected,
-        'kite_api_key': kite_api_key,
         'smtp_configured': smtp_configured,
         'recent_logs': recent_logs,
         'weight_threshold': django_settings.WEIGHT_CHANGE_THRESHOLD,
@@ -641,43 +634,6 @@ def rebalance_view(request):
     })
 
 
-@login_required
-def kite_login(request):
-    """Redirect user to Kite for authentication"""
-    from .kite_integration import initiate_kite_login
-    return initiate_kite_login(request)
-
-
-@login_required
-def kite_callback(request):
-    """Handle callback from Kite after authentication"""
-    from .kite_integration import kite_callback as handle_callback
-    return handle_callback(request)
-
-
-def kite_postback(request):
-    """Handle postbacks from Kite (order updates, etc.)"""
-    from .kite_integration import kite_postback as handle_postback
-    return handle_postback(request)
-
-
-@login_required
-def sync_kite_holdings(request):
-    """Manually sync holdings from Kite"""
-    from .kite_integration import fetch_and_sync_holdings, get_kite_session
-    
-    if not get_kite_session(request):
-        messages.error(request, 'Please connect your Kite account first.')
-        return redirect('dashboard')
-    
-    try:
-        fetch_and_sync_holdings(request)
-        messages.success(request, 'Your mutual fund holdings have been synced from Kite!')
-    except Exception as e:
-        logger.error(f"Error syncing Kite holdings: {e}")
-        messages.error(request, f'Error syncing holdings: {str(e)}')
-    
-    return redirect('dashboard')
 
 
 # CAS Parser Integration Views

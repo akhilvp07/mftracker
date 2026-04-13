@@ -11,7 +11,7 @@ A production-ready Django application for tracking mutual fund investments with 
 - **Smart Alerts** — Fund manager change, category change, objective change — persisted in DB, optional email
 - **Dark/Light Mode** — Toggle via navbar button, persisted in localStorage
 - **Scheduled Jobs** — Daily NAV refresh at 9 AM IST, monthly factsheet refresh on 1st of month
-- **Zerodha Kite** — Optional OAuth portfolio import (app works fully without it)
+- **CAS Import** — Import transactions from CAS PDF statements (CAMS/KARVY)
 - **Asset Allocation** — Set targets for Equity/Debt/Gold and Equity cap distribution (Large/Mid/Small)
 
 ---
@@ -72,9 +72,6 @@ python manage.py runserver
 | `EMAIL_HOST_USER` | *(empty)* | Gmail address |
 | `EMAIL_HOST_PASSWORD` | *(empty)* | Gmail App Password |
 | `DEFAULT_FROM_EMAIL` | *(empty)* | From address for alerts |
-| `KITE_API_KEY` | *(empty)* | Zerodha Kite API key (optional) |
-| `KITE_API_SECRET` | *(empty)* | Zerodha Kite API secret (optional) |
-| `KITE_REDIRECT_URL` | `http://localhost:8000/...` | Kite OAuth callback URL |
 | `WEIGHT_CHANGE_THRESHOLD` | `1.0` | Minimum % for weight change alerts |
 | `FACTSHEET_REFRESH_DAY` | `1` | Day of month for factsheet refresh |
 | `FACTSHEET_REFRESH_HOUR` | `2` | Hour (24h) for factsheet refresh |
@@ -147,7 +144,6 @@ mftracker/
 ├── .env.example         # Environment variable template
 ├── requirements.txt
 ├── Procfile
-├── KITE_API_SETUP.md    # Kite Connect API documentation
 └── README.md
 ```
 
@@ -159,7 +155,7 @@ mftracker/
 |---|---|
 | `mfapi.in` | Fund list seeding, current NAV, NAV history |
 | AMFI India | Factsheet data (holdings, sectors) — pluggable fetcher |
-| Zerodha Kite | Optional portfolio import via OAuth |
+| CAS Parser | Import transactions from CAS PDF statements |
 
 Factsheet fetcher is designed as a pluggable registry — swap data sources by adding a new `FactsheetFetcher` subclass in `factsheets/fetcher.py` and registering it in `_FETCHER_REGISTRY`.
 

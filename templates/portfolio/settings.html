@@ -216,41 +216,7 @@ DEFAULT_FROM_EMAIL=your@gmail.com
     </div>
   </div>
 
-  <!-- Zerodha Kite -->
-  <div class="col-lg-6">
-    <div class="mft-card">
-      <div class="mft-card-header">
-        <h5 class="mft-card-title"><i class="bi bi-plug me-2"></i>Zerodha Kite</h5>
-        {% if kite_connected %}
-        <span class="status-chip status-ok">Connected</span>
-        {% else %}
-        <span class="status-chip status-neutral">Optional</span>
-        {% endif %}
-      </div>
-      <div class="p-4">
-        <p class="text-secondary small">Import your Zerodha portfolio automatically. The app works fully without this.</p>
-        {% if kite_api_key %}
-        <div class="settings-info-row">
-          <span>API Key</span><strong class="font-mono">{{ kite_api_key|slice:":8" }}...</strong>
-        </div>
-        {% if not kite_connected %}
-        <a href="https://kite.zerodha.com/connect/login?api_key={{ kite_api_key }}" class="btn mft-btn-outline w-100 mt-3" target="_blank">
-          <i class="bi bi-box-arrow-up-right me-2"></i>Connect Zerodha
-        </a>
-        {% else %}
-        <div class="mt-3 text-success"><i class="bi bi-check-circle me-1"></i>Portfolio sync active</div>
-        {% endif %}
-        {% else %}
-        <div class="env-snippet">KITE_API_KEY=your_api_key
-KITE_API_SECRET=your_secret</div>
-        <p class="text-secondary small mt-2">Get credentials at <a href="https://developers.kite.trade" target="_blank">developers.kite.trade</a></p>
-        <p class="text-secondary small mt-2">Add these to your <code>.env</code> file and restart the server.</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-</div>
-
+  
 <!-- Danger Zone -->
 <div class="row mt-4">
   <div class="col-12">
@@ -308,7 +274,6 @@ KITE_API_SECRET=your_secret</div>
         <ul>
           <li>Your account settings</li>
           <li>Asset allocation preferences</li>
-          <li>Kite API credentials</li>
         </ul>
         
         <div class="mt-3">

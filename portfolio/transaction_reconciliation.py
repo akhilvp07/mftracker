@@ -1,6 +1,6 @@
 """
 Transaction Reconciliation Service
-Handles merging and reconciling transactions from different sources (CAS, Kite, Manual)
+Handles merging and reconciling transactions from different sources (CAS, Manual)
 """
 import logging
 from datetime import date, datetime
@@ -231,14 +231,12 @@ class TransactionReconciliationService:
         priority = self.cas_settings.data_source_priority
         
         if priority == 'CAS_FIRST':
-            return ['CAS', 'KITE', 'MANUAL']
-        elif priority == 'KITE_FIRST':
-            return ['KITE', 'CAS', 'MANUAL']
+            return ['CAS', 'MANUAL']
         elif priority == 'MOST_RECENT':
             # Sort by creation date, most recent first
             return sorted(data_sources, key=lambda x: x['created_at'], reverse=True)
         else:
-            return ['CAS', 'KITE', 'MANUAL']
+            return ['CAS', 'MANUAL']
     
     def get_transaction_summary(self):
         """Get a summary of transactions by source and type"""
