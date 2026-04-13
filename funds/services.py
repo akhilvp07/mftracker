@@ -342,10 +342,71 @@ def fetch_fund_nav(fund, fetch_history=False):
             logger.info(f"Fetching history for {fund.scheme_code} with {len(nav_data)} entries")
             _save_nav_history(fund, nav_data)
 
-        return fund
-    except requests.RequestException as e:
-        logger.error(f"Failed to fetch NAV for fund {fund.scheme_code}: {e}")
-        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch NAV from mfapi.in for fund {fund.scheme_code}: {e}")
+        logger.info(f"Trying AMFI fallback for fund {fund.scheme_code}")
+        
+        # Fallback: Try to get NAV from AMFI data
+        try:
+            _fetch_nav_from_amfi_fallback(fund)
+            logger.info(f"Successfully fetched NAV from AMFI fallback for {fund.scheme_name}")
+        except Exception as fallback_error:
+            logger.error(f"Both mfapi.in and AMFI fallback failed for {fund.scheme_code}: {fallback_error}")
+            raise e  # Raise the original error
+
+
+def _fetch_nav_from_amfi_fallback(fund):
+    """Fetch NAV from AMFI NAVAll.txt as fallback when mfapi.in is down."""
+    logger.info(f"Fetching NAV from AMFI for {fund.scheme_code}")
+    
+    # Download AMFI NAV data
+    raw = _fetch_with_retry(AMFI_NAV_URL, timeout=60)
+    text = raw.decode("utf-8", errors="replace")
+    
+    # Parse the file to find the fund
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Skip header lines
+        if line.startswith('Scheme Code') or ';' not in line:
+            continue
+            
+        parts = line.split(';')
+        if len(parts) < 5:
+            continue
+            
+        scheme_code = parts[0].strip()
+        if scheme_code != str(fund.scheme_code):
+            continue
+            
+        # Found the fund, extract NAV data
+        try:
+            nav_str = parts[4].strip()
+            date_str = parts[5].strip()
+            
+            # Parse NAV
+            nav_val = float(nav_str)
+            
+            # Parse date (DD-MMM-YYYY format)
+            nav_date = datetime.strptime(date_str, '%d-%b-%Y').date()
+            
+            # Update fund
+            fund.current_nav = nav_val
+            fund.nav_date = nav_date
+            fund.nav_last_updated = timezone.now()
+            fund.save()
+            
+            logger.info(f"Updated NAV from AMFI for {fund.scheme_name}: {nav_val} on {nav_date}")
+            return
+            
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Error parsing AMFI data for {fund.scheme_code}: {e}")
+            continue
+    
+    # If we get here, the fund wasn't found
+    raise ValueError(f"Fund {fund.scheme_code} not found in AMFI NAV data")
 
 
 def _save_nav_history(fund, nav_data):
