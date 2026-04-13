@@ -16,6 +16,7 @@
     "DJANGO_SETTINGS_MODULE": "config.settings"
   },
   "installCommand": "pip install -r requirements.txt",
+  "buildCommand": "python manage.py migrate",
   "regions": ["bom1"],
   "crons": [
     {
