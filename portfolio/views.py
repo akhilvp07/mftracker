@@ -41,7 +41,9 @@ def dashboard(request):
     total_current = Decimal('0')
 
     for pf in holdings:
-        invested = pf.total_invested
+        # Calculate invested amount as effective cost of current holdings
+        # This includes all purchases and redemptions
+        invested = pf.total_invested  # This already includes all lots (positive and negative)
         current = pf.current_value
         gain = current - invested
         gain_pct = (gain / invested * 100) if invested > 0 else Decimal('0')

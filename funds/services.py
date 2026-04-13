@@ -10,6 +10,9 @@ from .models import MutualFund, NAVHistory, SeedStatus
 logger = logging.getLogger(__name__)
 
 MFAPI_BASE = "https://api.mfapi.in/mf"
+# Global flag to track if mfapi.in is down
+_mfapi_down = False
+_mfapi_down_time = None
 AMFI_NAV_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (compatible; MFTracker/1.0)',
@@ -295,6 +298,8 @@ def seed_fund_database(force=False):
 
 def fetch_fund_nav(fund, fetch_history=False):
     """Fetch current NAV (and optionally full history) for a fund."""
+    global _mfapi_down, _mfapi_down_time
+    
     # Check cache first (cache for 4 hours)
     cache_key = f"nav_{fund.scheme_code}"
     cached_data = cache.get(cache_key)
@@ -308,6 +313,12 @@ def fetch_fund_nav(fund, fetch_history=False):
         fund.save()
         return
     
+    # Check if mfapi.in is known to be down (skip if less than 5 minutes ago)
+    if _mfapi_down and _mfapi_down_time and (timezone.now() - _mfapi_down_time).seconds < 300:
+        logger.info(f"mfapi.in is known to be down, using AMFI fallback for {fund.scheme_code}")
+        _fetch_nav_from_amfi_fallback(fund)
+        return
+    
     try:
         # Always use full endpoint to ensure latest data
         import time
@@ -316,6 +327,12 @@ def fetch_fund_nav(fund, fetch_history=False):
         raw = _fetch_with_retry(url, max_retries=3, timeout=20)
         data = json.loads(raw)
         logger.info(f"Fetched NAV data for {fund.scheme_code}: {len(data.get('data', []))} entries")
+        
+        # Reset the down flag if successful
+        if _mfapi_down:
+            _mfapi_down = False
+            _mfapi_down_time = None
+            logger.info("mfapi.in is back online")
         
         # Get metadata from full response
         meta = data.get('meta', {})
@@ -368,6 +385,13 @@ def fetch_fund_nav(fund, fetch_history=False):
 
     except Exception as e:
         logger.error(f"Failed to fetch NAV from mfapi.in for fund {fund.scheme_code}: {e}")
+        
+        # Mark mfapi.in as down if it's a server error
+        if '502' in str(e) or '503' in str(e) or 'timeout' in str(e).lower():
+            _mfapi_down = True
+            _mfapi_down_time = timezone.now()
+            logger.warning("mfapi.in appears to be down, marking for 5 minutes")
+        
         logger.info(f"Trying AMFI fallback for fund {fund.scheme_code}")
         
         # Fallback: Try to get NAV from AMFI data

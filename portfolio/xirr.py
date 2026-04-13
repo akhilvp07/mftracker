@@ -50,9 +50,14 @@ def calculate_fund_xirr(portfolio_fund):
 
     cashflows = []
     
-    # Add purchase lots as outflows
+    # Add all lots as cashflows
+    # Positive lots = purchases (outflows)
+    # Negative lots = redemptions (inflows)
     for lot in lots:
-        cashflows.append((lot.purchase_date, -float(lot.units * lot.avg_nav)))
+        if lot.units > 0:  # Purchase - money going out
+            cashflows.append((lot.purchase_date, -float(lot.units * lot.avg_nav)))
+        elif lot.units < 0:  # Redemption - money coming in
+            cashflows.append((lot.purchase_date, float(abs(lot.units) * lot.avg_nav)))
     
     # Add redemption transactions from CAS as inflows
     try:
@@ -95,15 +100,25 @@ def calculate_portfolio_xirr(portfolio):
 
     cashflows = []
     
-    # Add purchase lots as outflows
+    # Add all lots as cashflows
+    # Positive lots = purchases (outflows)
+    # Negative lots = redemptions (inflows)
     for pf in portfolio.holdings.select_related('fund').prefetch_related('lots'):
         for lot in pf.lots.all():
-            cashflows.append((lot.purchase_date, -float(lot.units * lot.avg_nav)))
-        
+            if lot.units > 0:  # Purchase - money going out
+                cashflows.append((lot.purchase_date, -float(lot.units * lot.avg_nav)))
+            elif lot.units < 0:  # Redemption - money coming in
+                cashflows.append((lot.purchase_date, float(abs(lot.units) * lot.avg_nav)))
+    
+    # Add single current value for entire portfolio
+    total_current_value = Decimal('0')
+    for pf in portfolio.holdings.select_related('fund').prefetch_related('lots'):
         current_nav = pf.fund.current_nav
         if current_nav:
             total_units = sum(lot.units for lot in pf.lots.all())
-            cashflows.append((date.today(), float(total_units * Decimal(str(current_nav)))))
+            total_current_value += total_units * Decimal(str(current_nav))
+    
+    cashflows.append((date.today(), float(total_current_value)))
     
     # Add redemption transactions from CAS as inflows
     try:
