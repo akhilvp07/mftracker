@@ -586,11 +586,9 @@ def _save_nav_history(fund, nav_data):
 
 def refresh_all_nav_bulk(user_portfolio):
     """
-    Refresh NAV for all funds using mfdata.in parallel requests.
-    Much faster than individual sequential calls.
+    Refresh NAV for all funds using mfdata.in bulk endpoint.
     """
     from portfolio.models import PortfolioFund
-    import time
     
     logger.info(f"Starting bulk NAV refresh for portfolio {user_portfolio.name}")
     
@@ -602,50 +600,44 @@ def refresh_all_nav_bulk(user_portfolio):
         logger.warning("No funds found in portfolio")
         return
     
-    # Use mfdata.in parallel fetch
-    try:
-        from .mfdata_service import fetch_bulk_nav
-        bulk_nav_data = fetch_bulk_nav(scheme_codes)
-        
-        if bulk_nav_data:
-            logger.info(f"Successfully fetched bulk NAV data for {len(bulk_nav_data)} funds")
-            
-            # Update each fund
-            updated_count = 0
-            for pf in holdings:
-                code = str(pf.fund.scheme_code)
-                if code in bulk_nav_data:
-                    nav_data = bulk_nav_data[code]
-                    
-                    # Update fund with rich data
-                    from decimal import Decimal
-                    pf.fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
-                    pf.fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
-                    pf.fund.nav_last_updated = timezone.now()
-                    
-                    # Update additional fields if available
-                    if 'expense_ratio' in nav_data and nav_data['expense_ratio']:
-                        pf.fund.expense_ratio = Decimal(str(nav_data['expense_ratio']))
-                    
-                    if 'aum' in nav_data and nav_data['aum']:
-                        # Convert from absolute value to crores
-                        aum_cr = nav_data['aum'] / 10000000
-                        pf.fund.aum = Decimal(str(aum_cr))
-                    
-                    pf.fund.save()
-                    updated_count += 1
-                    
-                    logger.info(f"Updated {pf.fund.scheme_name}: {pf.fund.current_nav} ({nav_data.get('day_change_pct', 0)}%)")
-            
-            logger.info(f"Bulk NAV refresh completed: {updated_count}/{len(holdings)} funds updated")
-            return
-            
-    except Exception as e:
-        logger.error(f"Bulk NAV refresh failed: {e}")
+    # Use mfdata.in bulk endpoint
+    from .mfdata_service import fetch_bulk_nav
+    bulk_nav_data = fetch_bulk_nav(scheme_codes)
     
-    # Fallback to individual refresh
-    logger.info("Falling back to individual NAV refresh")
-    refresh_all_nav(user_portfolio)
+    if not bulk_nav_data:
+        logger.error("No NAV data received from bulk endpoint")
+        raise Exception("Failed to fetch NAV data")
+    
+    logger.info(f"Successfully fetched bulk NAV data for {len(bulk_nav_data)} funds")
+    
+    # Update each fund
+    updated_count = 0
+    for pf in holdings:
+        code = str(pf.fund.scheme_code)
+        if code in bulk_nav_data:
+            nav_data = bulk_nav_data[code]
+            
+            # Update fund with rich data
+            from decimal import Decimal
+            pf.fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
+            pf.fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
+            pf.fund.nav_last_updated = timezone.now()
+            
+            # Update additional fields if available
+            if 'expense_ratio' in nav_data and nav_data['expense_ratio']:
+                pf.fund.expense_ratio = Decimal(str(nav_data['expense_ratio']))
+            
+            if 'aum' in nav_data and nav_data['aum']:
+                # Convert from absolute value to crores
+                aum_cr = nav_data['aum'] / 10000000
+                pf.fund.aum = Decimal(str(aum_cr))
+            
+            pf.fund.save()
+            updated_count += 1
+            
+            logger.info(f"Updated {pf.fund.scheme_name}: {pf.fund.current_nav} ({nav_data.get('day_change_pct', 0)}%)")
+    
+    logger.info(f"Bulk NAV refresh completed: {updated_count}/{len(holdings)} funds updated")
 
 
 def refresh_all_nav(user_portfolio):
