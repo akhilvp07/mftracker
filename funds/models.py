@@ -28,6 +28,59 @@ class MutualFund(models.Model):
     aum = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, help_text="Assets Under Management in crores")
     face_value = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
     
+    # Additional metrics from mfdata.in
+    day_change = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True, help_text="Day change in NAV")
+    day_change_pct = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text="Day change percentage")
+    morningstar_rating = models.IntegerField(null=True, blank=True, help_text="Morningstar rating (1-5)")
+    family_id = models.IntegerField(null=True, blank=True, help_text="Fund family ID from mfdata.in")
+    plan_type = models.CharField(max_length=20, blank=True, help_text="Direct/Regular plan type")
+    
+    # Returns data from mfdata.in
+    return_1m = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    return_3m = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    return_6m = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    return_1y = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    return_3y = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    return_5y = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    return_since_inception = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    
+    # Category ranks
+    rank_1y = models.IntegerField(null=True, blank=True, help_text="Category rank for 1Y return")
+    rank_3y = models.IntegerField(null=True, blank=True, help_text="Category rank for 3Y return")
+    rank_5y = models.IntegerField(null=True, blank=True, help_text="Category rank for 5Y return")
+    total_in_category = models.IntegerField(null=True, blank=True, help_text="Total funds in category")
+    
+    # Valuation ratios
+    pe_ratio = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    pb_ratio = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    dividend_yield = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    
+    # Risk metrics
+    sharpe_ratio = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    alpha = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    beta = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    std_deviation = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    sortino_ratio = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    treynor_ratio = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    r_squared = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    
+    # Risk analysis
+    max_drawdown = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    upside_capture = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    downside_capture = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    
+    # Investment details
+    exit_load = models.CharField(max_length=500, blank=True, help_text="Exit load details")
+    min_investment = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    min_sip = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    # Fund manager details
+    fund_manager_tenure = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True, help_text="Manager tenure in years")
+    fund_manager_start = models.DateField(null=True, blank=True)
+    
+    # Analyst rating
+    analyst_rating = models.CharField(max_length=50, blank=True, help_text="Gold/Silver/Bronze/Neutral/Negative")
+    
     # Dates and maturity
     start_date = models.DateField(null=True, blank=True, help_text="Scheme inception date")
     maturity_type = models.CharField(max_length=50, blank=True, help_text="Open Ended/Close Ended")

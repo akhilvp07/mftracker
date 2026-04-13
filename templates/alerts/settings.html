@@ -1,0 +1,174 @@
+{% extends "base/base.html" %}
+{% block title %}Alert Settings{% endblock %}
+{% block content %}
+
+<div class="page-header mb-4">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mft-breadcrumb">
+        <li class="breadcrumb-item"><a href="/dashboard/">Dashboard</a></li>
+        <li class="breadcrumb-item"><a href="/alerts/">Alerts</a></li>
+        <li class="breadcrumb-item active">Settings</li>
+      </ol>
+    </nav>
+    <h2 class="page-title mt-1"><i class="bi bi-gear me-2"></i>Alert Settings</h2>
+    <p class="text-muted">Configure how and when you receive notifications</p>
+  </div>
+</div>
+
+<form method="post" class="mft-card">
+  {% csrf_token %}
+  <div class="mft-card-header">
+    <h5 class="mft-card-title">Email Notifications</h5>
+  </div>
+  <div class="p-3">
+    <div class="row g-4">
+      <div class="col-md-6">
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="email_nav_changes" id="email_nav_changes" 
+                 {% if preferences.email_nav_changes %}checked{% endif %}>
+          <label class="form-check-label" for="email_nav_changes">
+            NAV Changes
+            <small class="text-muted d-block">Get notified when NAV moves more than threshold</small>
+          </label>
+        </div>
+        
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="email_holdings_changes" id="email_holdings_changes"
+                 {% if preferences.email_holdings_changes %}checked{% endif %}>
+          <label class="form-check-label" for="email_holdings_changes">
+            Holdings Changes
+            <small class="text-muted d-block">New holdings added or completely exited</small>
+          </label>
+        </div>
+        
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="email_sector_changes" id="email_sector_changes"
+                 {% if preferences.email_sector_changes %}checked{% endif %}>
+          <label class="form-check-label" for="email_sector_changes">
+            Sector Allocation Changes
+            <small class="text-muted d-block">Significant shifts in sector allocation</small>
+          </label>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="email_risk_alerts" id="email_risk_alerts"
+                 {% if preferences.email_risk_alerts %}checked{% endif %}>
+          <label class="form-check-label" for="email_risk_alerts">
+            Risk Alerts
+            <small class="text-muted d-block">Warnings about high beta, volatility, etc.</small>
+          </label>
+        </div>
+        
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="email_metadata_changes" id="email_metadata_changes"
+                 {% if preferences.email_metadata_changes %}checked{% endif %}>
+          <label class="form-check-label" for="email_metadata_changes">
+            Fund Metadata Changes
+            <small class="text-muted d-block">Expense ratio, AUM, rating updates</small>
+          </label>
+        </div>
+        
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="daily_digest_enabled" id="daily_digest_enabled"
+                 {% if preferences.daily_digest_enabled %}checked{% endif %}>
+          <label class="form-check-label" for="daily_digest_enabled">
+            Daily Digest
+            <small class="text-muted d-block">Daily summary of all alerts</small>
+          </label>
+        </div>
+        
+        <div class="mb-3" id="digestTimeGroup" style="{% if not preferences.daily_digest_enabled %}display:none{% endif %}">
+          <label for="digest_time" class="form-label small">Digest Time</label>
+          <input type="time" class="form-control form-control-sm" name="digest_time" id="digest_time"
+                 value="{{ preferences.digest_time|date:'H:i' }}">
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="mft-card-header mt-4">
+    <h5 class="mft-card-title">In-App Notifications</h5>
+  </div>
+  <div class="p-3">
+    <div class="row g-4">
+      <div class="col-md-6">
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="app_nav_changes" id="app_nav_changes"
+                 {% if preferences.app_nav_changes %}checked{% endif %}>
+          <label class="form-check-label" for="app_nav_changes">
+            NAV Changes
+          </label>
+        </div>
+        
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="app_holdings_changes" id="app_holdings_changes"
+                 {% if preferences.app_holdings_changes %}checked{% endif %}>
+          <label class="form-check-label" for="app_holdings_changes">
+            Holdings Changes
+          </label>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="app_sector_changes" id="app_sector_changes"
+                 {% if preferences.app_sector_changes %}checked{% endif %}>
+          <label class="form-check-label" for="app_sector_changes">
+            Sector Allocation Changes
+          </label>
+        </div>
+        
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" name="app_risk_alerts" id="app_risk_alerts"
+                 {% if preferences.app_risk_alerts %}checked{% endif %}>
+          <label class="form-check-label" for="app_risk_alerts">
+            Risk Alerts
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="mft-card-header mt-4">
+    <h5 class="mft-card-title">Alert Thresholds</h5>
+  </div>
+  <div class="p-3">
+    <div class="row g-4">
+      <div class="col-md-4">
+        <label for="nav_threshold" class="form-label">NAV Change Threshold (%)</label>
+        <input type="number" class="form-control" name="nav_threshold" id="nav_threshold"
+               min="1" max="50" step="0.5" value="{{ preferences.nav_threshold }}">
+      </div>
+      
+      <div class="col-md-4">
+        <label for="weight_change_threshold" class="form-label">Weight Change Threshold (%)</label>
+        <input type="number" class="form-control" name="weight_change_threshold" id="weight_change_threshold"
+               min="0.5" max="20" step="0.5" value="{{ preferences.weight_change_threshold }}">
+      </div>
+      
+      <div class="col-md-4">
+        <label for="sector_change_threshold" class="form-label">Sector Change Threshold (%)</label>
+        <input type="number" class="form-control" name="sector_change_threshold" id="sector_change_threshold"
+               min="1" max="50" step="0.5" value="{{ preferences.sector_change_threshold }}">
+      </div>
+    </div>
+  </div>
+  
+  <div class="p-3 pt-0">
+    <button type="submit" class="btn mft-btn-primary">
+      <i class="bi bi-check-lg me-1"></i>Save Settings
+    </button>
+  </div>
+</form>
+
+<script>
+document.getElementById('daily_digest_enabled').addEventListener('change', function() {
+  const digestTimeGroup = document.getElementById('digestTimeGroup');
+  digestTimeGroup.style.display = this.checked ? 'block' : 'none';
+});
+</script>
+
+{% endblock %}

@@ -1,19 +1,29 @@
 import requests
-import logging
 import json
+import logging
 import time
-from django.utils import timezone
-from django.core.cache import cache
 from datetime import datetime, date
+from decimal import Decimal
+from django.utils import timezone
+from django.conf import settings
+from django.core.cache import cache
 from .models import MutualFund, NAVHistory, SeedStatus
 
 logger = logging.getLogger(__name__)
 
+# API endpoints
 MFAPI_BASE = "https://api.mfapi.in/mf"
-# Global flag to track if mfapi.in is down
+AMFI_NAV_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
+
+# Constants
+SEED_MAX_RETRIES = 4
+SEED_RETRY_DELAY = 5  # seconds
+
+# Global flags to track API status
 _mfapi_down = False
 _mfapi_down_time = None
-AMFI_NAV_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
+
+# Headers for requests
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (compatible; MFTracker/1.0)',
     'Accept': 'application/json, text/plain, */*',
@@ -23,440 +33,242 @@ HEADERS = {
     'Pragma': 'no-cache',
     'Expires': '0',
 }
-SEED_MAX_RETRIES = 4
-SEED_RETRY_DELAY = 3   # seconds between retries
 
-
-# ---------------------------------------------------------------------------
-# Robust HTTP helpers
-# ---------------------------------------------------------------------------
 
 def _fetch_with_retry(url, max_retries=SEED_MAX_RETRIES, stream=False, timeout=60):
-    """
-    GET with exponential back-off retry.
-    Uses streaming + full content read to survive IncompleteRead on flaky
-    connections (common with the large mfapi.in fund-list payload).
-    """
-    last_exc = None
-    for attempt in range(1, max_retries + 1):
+    """Fetch URL with retry logic."""
+    for attempt in range(max_retries):
         try:
-            logger.info(f"GET {url}  (attempt {attempt}/{max_retries})")
-            resp = requests.get(
-                url,
-                headers=HEADERS,
-                timeout=timeout,
-                stream=True,          # always stream so we control the read
-            )
-            resp.raise_for_status()
-
-            # Read the whole body in chunks to avoid IncompleteRead on truncated
-            # HTTP/1.1 chunked responses.
-            chunks = []
-            for chunk in resp.iter_content(chunk_size=65536):
-                if chunk:
-                    chunks.append(chunk)
-            raw = b"".join(chunks)
-            return raw
-
-        except (requests.exceptions.ChunkedEncodingError,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout) as exc:
-            last_exc = exc
-            wait = SEED_RETRY_DELAY * (2 ** (attempt - 1))
-            logger.warning(f"Attempt {attempt} failed: {exc}. Retrying in {wait}s…")
-            time.sleep(wait)
-
-        except requests.exceptions.HTTPError as exc:
-            # Non-retryable (4xx/5xx)
-            raise
-
-    raise last_exc
-
-
-# ---------------------------------------------------------------------------
-# Fund-list fetchers  (mfapi primary, AMFI fallback)
-# ---------------------------------------------------------------------------
-
-def _fetch_funds_from_mfapi():
-    """Return list of {schemeCode, schemeName} dicts from mfapi.in."""
-    raw = _fetch_with_retry(MFAPI_BASE)
-    return json.loads(raw)
-
-
-def _fetch_funds_from_amfi():
-    """
-    Parse the AMFI NAVAll.txt file as a fallback fund-list source.
-
-    File format (pipe-delimited, but actually semicolon in practice):
-        Scheme Code;ISIN Div Payout/IDCW;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
-
-    Section headers look like:
-        Open Ended Schemes(Debt Scheme - Banking and PSU Fund)
-    """
-    logger.info("Falling back to AMFI NAVAll.txt for fund list…")
-    raw = _fetch_with_retry(AMFI_NAV_URL, timeout=60)
-    text = raw.decode("utf-8", errors="replace")
-
-    funds = []
-    current_amc = ""
-
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-
-        # Data rows are semicolon-delimited; headers/AMC names have no semicolons.
-        if ";" not in line:
-            # Track AMC name (ignore category sub-headers like "Open Ended Schemes(…)")
-            if not line.startswith("Open Ended") and not line.startswith("Close Ended") \
-                    and not line.startswith("Interval") and "(" not in line:
-                current_amc = line
-            continue
-
-        parts = line.split(";")
-        if len(parts) < 4:
-            continue
-
-        try:
-            scheme_code = int(parts[0].strip())
-        except ValueError:
-            continue  # skip any header rows that slipped through
-
-        # Extract ISIN (prefer Div Payout/IDCW ISIN)
-        isin = parts[1].strip() if len(parts) > 1 else ""
-        if isin == "-" or not isin:
-            isin = parts[2].strip() if len(parts) > 2 else ""  # Try Div Reinvestment ISIN
-            
-        scheme_name = parts[3].strip()
-        
-        # Extract NAV and date if available
-        nav = None
-        nav_date = None
-        if len(parts) >= 6:
-            try:
-                nav_str = parts[4].strip()
-                if nav_str and nav_str != 'NA':
-                    nav = float(nav_str)
-                
-                date_str = parts[5].strip()
-                if date_str and date_str != 'NA':
-                    # Parse date in DD-MMM-YYYY format
-                    from datetime import datetime
-                    try:
-                        nav_date = datetime.strptime(date_str, '%d-%b-%Y').date()
-                    except:
-                        # Try other formats
-                        try:
-                            nav_date = datetime.strptime(date_str, '%d-%b-%y').date()
-                        except:
-                            pass
-            except:
-                pass
-        
-        if scheme_code and scheme_name:
-            # Only store Direct Plan - Growth funds to optimize memory
-            if 'direct plan' in scheme_name.lower() and 'growth' in scheme_name.lower():
-                funds.append({
-                    "schemeCode": scheme_code,
-                    "schemeName": scheme_name,
-                    "isin": isin,
-                    # Skip AMC, NAV, and other data for optimization
-                    # These will be fetched when fund is added to portfolio
-                })
-
-    logger.info(f"AMFI fallback: parsed {len(funds)} funds")
-    return funds
-
-
-def _bulk_upsert_funds(funds_data):
-    """Upsert a list of fund dicts into MutualFund; return (created, updated)."""
-    created = updated = 0
-    
-    # Process in batches for speed + memory efficiency
-    BATCH = 500
-    for i in range(0, len(funds_data), BATCH):
-        batch = funds_data[i: i + BATCH]
-        existing = {
-            mf.scheme_code: mf
-            for mf in MutualFund.objects.filter(
-                scheme_code__in=[f["schemeCode"] for f in batch if f.get("schemeCode")]
-            )
-        }
-        to_create = []
-        to_update = []
-        for item in batch:
-            code = item.get("schemeCode")
-            name = (item.get("schemeName") or "").strip()
-            isin = (item.get("isin") or "").strip()
-            
-            if not code or not name:
-                continue
-                
-            if code in existing:
-                obj = existing[code]
-                dirty = False
-                if obj.scheme_name != name:
-                    obj.scheme_name = name
-                    dirty = True
-                if isin and not obj.isin:
-                    obj.isin = isin
-                    dirty = True
-                # Don't change is_active status on update
-                if dirty:
-                    to_update.append(obj)
-                updated += 1
-            else:
-                # New funds start as inactive - store only essential data
-                to_create.append(MutualFund(
-                    scheme_code=code,
-                    scheme_name=name,
-                    isin=isin,
-                    is_active=False
-                ))
-                created += 1
-
-        if to_create:
-            MutualFund.objects.bulk_create(to_create, ignore_conflicts=True)
-        if to_update:
-            MutualFund.objects.bulk_update(to_update, ["scheme_name", "isin"])
-
-    return created, updated
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-def seed_fund_database(force=False):
-    """Seed local DB with full AMFI fund list.
-
-    Strategy:
-      1. Try AMFI NAVAll.txt (primary - more reliable).
-      2. If that fails, fall back to mfapi.in.
-    """
-    status, _ = SeedStatus.objects.get_or_create(pk=1)
-    if status.status == 'done' and not force:
-        logger.info("Database already seeded. Use force=True to re-seed.")
-        return status
-
-    status.status = 'running'
-    status.error_message = ''
-    status.save()
-
-    funds_data = None
-    source_used = "amfi"
-
-    # --- Primary: AMFI NAVAll.txt ---
-    try:
-        funds_data = _fetch_funds_from_amfi()
-        logger.info(f"AMFI returned {len(funds_data)} fund records")
-    except Exception as exc:
-        logger.warning(f"AMFI seed failed: {exc}. Trying mfapi.in fallback…")
-
-    # --- Fallback: mfapi.in ---
-    if not funds_data:
-        try:
-            funds_data = _fetch_funds_from_mfapi()
-            source_used = "mfapi"
-            logger.info(f"mfapi.in returned {len(funds_data)} fund records")
-        except Exception as exc:
-            msg = f"Both AMFI and mfapi.in fallback failed: {exc}"
-            logger.error(msg)
-            status.status = 'failed'
-            status.error_message = msg
-            status.save()
-            raise RuntimeError(msg) from exc
-
-    if not funds_data:
-        msg = "No fund data returned from any source"
-        status.status = 'failed'
-        status.error_message = msg
-        status.save()
-        raise RuntimeError(msg)
-
-    try:
-        created, updated = _bulk_upsert_funds(funds_data)
-        total = created + updated
-        status.status = 'done'
-        status.last_seeded = timezone.now()
-        status.total_funds = total
-        status.error_message = f"Source: {source_used}"
-        status.save()
-        logger.info(
-            f"Seeding complete ({source_used}): "
-            f"{created} created, {updated} updated, {total} total."
-        )
-        return status
-
-    except Exception as exc:
-        logger.error(f"DB upsert failed: {exc}")
-        status.status = 'failed'
-        status.error_message = str(exc)
-        status.save()
-        raise
+            response = requests.get(url, headers={}, timeout=timeout, stream=stream)
+            response.raise_for_status()
+            return response.text if not stream else response
+        except requests.exceptions.RequestException as exc:
+            if attempt == max_retries - 1:
+                raise exc
+            logger.warning(f"Retry {attempt + 1}/{max_retries} for {url}: {exc}")
+            import time
+            time.sleep(SEED_RETRY_DELAY)
 
 
 def fetch_fund_nav(fund, fetch_history=False):
-    """Fetch current NAV (and optionally full history) for a fund."""
-    # Try mfdata.in first (primary source)
-    try:
-        from .mfdata_service import fetch_fund_nav as fetch_from_mfdata
-        nav_data = fetch_from_mfdata(fund.scheme_code)
-        
-        if nav_data:
-            # Update fund with rich data from mfdata.in
-            from decimal import Decimal
-            fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
-            fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
-            fund.nav_last_updated = timezone.now()
-            
-            # Update additional fields if available
-            if 'expense_ratio' in nav_data:
-                # You could add expense_ratio field to MutualFund model
-                pass
-            
-            fund.save()
-            
-            # Cache for compatibility with existing code
-            cache_key = f"nav_{fund.scheme_code}"
-            cache_data = {
-                'nav': fund.current_nav,
-                'date': fund.nav_date,
-                'updated_at': fund.nav_last_updated
-            }
-            cache.set(cache_key, cache_data, 14400)
-            
-            logger.info(f"Updated NAV from mfdata.in for {fund.scheme_name}: {fund.current_nav} on {fund.nav_date}")
-            
-            # Fetch history if requested
-            if fetch_history:
-                _fetch_nav_history_from_mfdata(fund)
-            
-            return
-            
-    except Exception as e:
-        logger.warning(f"Failed to fetch from mfdata.in for {fund.scheme_code}: {e}")
+    """Fetch current NAV (and optionally full history) for a fund using round-robin API retry."""
+    from decimal import Decimal
     
-    # Fallback to original mfapi.in + AMFI chain
+    # Define API sources in order of preference
+    api_sources = [
+        ('mfdata.in', _try_mfdata),
+        ('mfapi.in', _try_mfapi),
+        ('AMFI', _try_amfi)
+    ]
+    
+    # Try each API source
+    for api_name, api_func in api_sources:
+        try:
+            logger.info(f"Trying {api_name} for {fund.scheme_code}")
+            if api_func(fund, fetch_history):
+                logger.info(f"Successfully fetched NAV from {api_name} for {fund.scheme_code}")
+                return  # Success, no need to try other APIs
+        except Exception as e:
+            logger.warning(f"{api_name} failed for {fund.scheme_code}: {e}")
+            continue  # Try next API
+    
+    # If all APIs failed
+    logger.error(f"All APIs failed for {fund.scheme_code}")
+
+
+def _try_mfdata(fund, fetch_history):
+    """Try fetching from mfdata.in API."""
+    from .mfdata_service import fetch_fund_nav as fetch_from_mfdata
+    
+    # Determine if we should skip cache
+    skip_cache = False
+    if fetch_history:
+        # Check if history is fresh enough
+        from funds.models import NAVHistory
+        latest_history = NAVHistory.objects.filter(fund=fund).order_by('-date').first()
+        
+        # Skip cache only if:
+        # 1. No history exists, OR
+        # 2. History is more than 1 day old, OR
+        # 3. NAV was updated more recently than history
+        if not latest_history:
+            skip_cache = True
+            logger.info(f"No history exists for {fund.scheme_code}, skipping cache")
+        else:
+            from datetime import timedelta
+            now = timezone.now()
+            
+            # Check if history is stale (more than 1 day old)
+            if (now.date() - latest_history.date) > timedelta(days=1):
+                skip_cache = True
+                logger.info(f"History is stale for {fund.scheme_code} (latest: {latest_history.date}), skipping cache")
+            
+            # Check if NAV was updated after latest history
+            elif fund.nav_last_updated and fund.nav_last_updated > now - timedelta(hours=4):
+                if fund.nav_last_updated.date() > latest_history.date:
+                    skip_cache = True
+                    logger.info(f"NAV updated after history for {fund.scheme_code}, skipping cache")
+    
+    nav_data = fetch_from_mfdata(fund.scheme_code, skip_cache=skip_cache)
+    
+    if nav_data:
+        # Update fund with rich data from mfdata.in
+        from decimal import Decimal
+        fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
+        fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
+        fund.nav_last_updated = timezone.now()
+        
+        # Update additional fields
+        if 'expense_ratio' in nav_data and nav_data['expense_ratio']:
+            fund.expense_ratio = Decimal(str(nav_data['expense_ratio']))
+        
+        if 'aum' in nav_data and nav_data['aum']:
+            fund.aum = Decimal(str(nav_data['aum'] / 10000000))
+        
+        if 'day_change' in nav_data and nav_data['day_change'] is not None:
+            fund.day_change = Decimal(str(nav_data['day_change']))
+        
+        if 'day_change_pct' in nav_data and nav_data['day_change_pct'] is not None:
+            fund.day_change_pct = Decimal(str(nav_data['day_change_pct']))
+        
+        if 'morningstar' in nav_data and nav_data['morningstar'] is not None:
+            fund.morningstar_rating = nav_data['morningstar']
+        
+        fund.save()
+        
+        # Cache for compatibility
+        cache_key = f"nav_{fund.scheme_code}"
+        cache_data = {
+            'nav': fund.current_nav,
+            'date': fund.nav_date,
+            'updated_at': fund.nav_last_updated
+        }
+        cache.set(cache_key, cache_data, 14400)
+        
+        # Fetch history if requested
+        if fetch_history:
+            _fetch_nav_history_from_mfdata(fund)
+            
+            # Check if we got enough history (at least 200 entries for 1 year)
+            from funds.models import NAVHistory
+            history_count = NAVHistory.objects.filter(fund=fund).count()
+            if history_count < 200:
+                logger.info(f"mfdata.in returned only {history_count} history entries for {fund.scheme_code}, trying other APIs")
+                return False  # Signal that we should try other APIs for more history
+        
+        return True
+    
+    return False
+
+
+def _try_mfapi(fund, fetch_history):
+    """Try fetching from mfapi.in API."""
     global _mfapi_down, _mfapi_down_time
     
-    # Check cache first (cache for 4 hours)
+    # Check if mfapi.in is known to be down
+    if _mfapi_down and _mfapi_down_time and (timezone.now() - _mfapi_down_time).seconds < 300:
+        logger.info(f"mfapi.in is known to be down, skipping")
+        return False
+    
+    # Check cache first
     cache_key = f"nav_{fund.scheme_code}"
     cached_data = cache.get(cache_key)
-    
     if cached_data and not fetch_history:
         logger.info(f"Using cached NAV data for {fund.scheme_code}")
-        # Update fund from cached data
         fund.current_nav = cached_data['nav']
         fund.nav_date = cached_data['date']
         fund.nav_last_updated = cached_data['updated_at']
         fund.save()
-        return
-    
-    # Check if mfapi.in is known to be down (skip if less than 5 minutes ago)
-    if _mfapi_down and _mfapi_down_time and (timezone.now() - _mfapi_down_time).seconds < 300:
-        logger.info(f"mfapi.in is known to be down, using AMFI fallback for {fund.scheme_code}")
-        _fetch_nav_from_amfi_fallback(fund)
-        return
+        return True
     
     try:
-        # Always use full endpoint to ensure latest data
         import time
         timestamp = int(time.time())
         url = f"{MFAPI_BASE}/{fund.scheme_code}?_={timestamp}"
         raw = _fetch_with_retry(url, max_retries=3, timeout=20)
         data = json.loads(raw)
-        logger.info(f"Fetched NAV data for {fund.scheme_code}: {len(data.get('data', []))} entries")
         
-        # Reset the down flag if successful
+        # Reset down flag if successful
         if _mfapi_down:
             _mfapi_down = False
             _mfapi_down_time = None
             logger.info("mfapi.in is back online")
         
-        # Get metadata from full response
-        meta = data.get('meta', {})
-        fund.amc = meta.get('fund_house', fund.amc or '')
-        fund.category = meta.get('scheme_category', fund.category or '')
-        fund.fund_type = meta.get('scheme_type', fund.fund_type or '')
-        
         nav_data = data.get('data', [])
-
         if nav_data:
             latest = nav_data[0]
+            nav_val = float(latest['nav'])
+            date_str = latest['date']
+            
+            # Parse date
+            for fmt in ['%d-%m-%Y', '%d-%b-%Y', '%d-%B-%Y']:
+                try:
+                    nav_date = datetime.strptime(date_str, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            else:
+                nav_date = date.today()
+            
+            fund.current_nav = nav_val
+            fund.nav_date = nav_date
+            fund.nav_last_updated = timezone.now()
+            fund.save()
+            
+            # Trigger intelligent monitoring for NAV changes
             try:
-                nav_val = float(latest['nav'])
-                date_str = latest['date']
-                logger.info(f"NAV date string for {fund.scheme_code}: {date_str}")
-                
-                # Try different date formats
-                for fmt in ['%d-%m-%Y', '%d-%b-%Y', '%d-%B-%Y']:
-                    try:
-                        nav_date = datetime.strptime(date_str, fmt).date()
-                        logger.info(f"Successfully parsed date {date_str} with format {fmt}")
-                        break
-                    except ValueError:
-                        continue
-                else:
-                    # If no format matched, use today's date as fallback
-                    logger.warning(f"Could not parse date {date_str}, using today's date")
-                    nav_date = date.today()
-                
-                fund.current_nav = nav_val
-                fund.nav_date = nav_date
-                fund.nav_last_updated = timezone.now()
-                fund.save()
-                
-                # Cache the NAV data for 4 hours
-                cache_data = {
-                    'nav': nav_val,
-                    'date': nav_date,
-                    'updated_at': fund.nav_last_updated
-                }
-                cache.set(cache_key, cache_data, 14400)  # 4 hours = 14400 seconds
-                logger.info(f"Cached NAV data for {fund.scheme_code}")
-                
-            except (ValueError, KeyError) as e:
-                logger.warning(f"Could not parse NAV for {fund.scheme_code}: {e}")
-
-        if fetch_history and nav_data:
-            logger.info(f"Fetching history for {fund.scheme_code} with {len(nav_data)} entries")
-            _save_nav_history(fund, nav_data)
-
+                from alerts.intelligent_monitor import trigger_nav_monitoring
+                # Run in background to avoid blocking
+                from django.core.cache import cache
+                cache_key = f"nav_monitor_trigger:{fund.scheme_code}"
+                if not cache.get(cache_key):  # Avoid duplicate triggers
+                    trigger_nav_monitoring(fund)
+                    cache.set(cache_key, True, timeout=300)  # 5 minute cooldown
+            except Exception as e:
+                logger.warning(f"Failed to trigger NAV monitoring: {e}")
+            
+            # Cache
+            cache_data = {
+                'nav': nav_val,
+                'date': nav_date,
+                'updated_at': fund.nav_last_updated
+            }
+            cache.set(cache_key, cache_data, 14400)
+            
+            if fetch_history and nav_data:
+                _save_nav_history(fund, nav_data)
+            
+            return True
+            
     except Exception as e:
-        logger.error(f"Failed to fetch NAV from mfapi.in for fund {fund.scheme_code}: {e}")
-        
-        # Mark mfapi.in as down if it's a server error
+        # Mark as down if server error or timeout
         if '502' in str(e) or '503' in str(e) or 'timeout' in str(e).lower():
             _mfapi_down = True
             _mfapi_down_time = timezone.now()
             logger.warning("mfapi.in appears to be down, marking for 5 minutes")
-        
-        logger.info(f"Trying AMFI fallback for fund {fund.scheme_code}")
-        
-        # Fallback: Try to get NAV from AMFI data
-        try:
-            _fetch_nav_from_amfi_fallback(fund)
-            logger.info(f"Successfully fetched NAV from AMFI fallback for {fund.scheme_name}")
-        except Exception as fallback_error:
-            logger.error(f"Both mfapi.in and AMFI fallback failed for {fund.scheme_code}: {fallback_error}")
-            raise e  # Raise the original error
+        raise e
+    
+    return False
+
+
+def _try_amfi(fund, fetch_history):
+    """Try fetching from AMFI."""
+    try:
+        _fetch_nav_from_amfi_fallback(fund)
+        return True
+    except:
+        return False
 
 
 def _fetch_nav_from_amfi_fallback(fund):
-    """Fetch NAV from AMFI NAVAll.txt as fallback when mfapi.in is down."""
+    """Fetch NAV from AMFI when other APIs fail."""
     logger.info(f"Fetching NAV from AMFI for {fund.scheme_code}")
     
-    # Download AMFI NAV data
+    # Download AMFI NAV file
     raw = _fetch_with_retry(AMFI_NAV_URL, timeout=60)
-    text = raw.decode("utf-8", errors="replace")
     
-    # Parse the file to find the fund
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-            
+    # Parse the file line by line
+    for line in raw.split('\n'):
         # Skip header lines
         if line.startswith('Scheme Code') or ';' not in line:
             continue
@@ -509,84 +321,159 @@ def _fetch_nav_from_amfi_fallback(fund):
 
 def _fetch_nav_history_from_mfdata(fund):
     """Fetch NAV history from mfdata.in and save to database."""
-    try:
-        from .mfdata_service import fetch_nav_history
-        history_data = fetch_nav_history(fund.scheme_code, limit=1000)
-        
-        if not history_data:
-            return
-        
-        # Save history to database
-        for entry in history_data:
-            nav_date = datetime.strptime(entry['date'], '%Y-%m-%d').date()
-            nav_value = Decimal(str(entry['nav']))
-            
-            NAVHistory.objects.update_or_create(
-                fund=fund,
-                date=nav_date,
-                defaults={'nav': nav_value}
-            )
-        
-        logger.info(f"Saved {len(history_data)} NAV history points from mfdata.in for {fund.scheme_name}")
-        
-    except Exception as e:
-        logger.error(f"Failed to fetch NAV history from mfdata.in for {fund.scheme_code}: {e}")
-
-
-def clear_nav_cache(fund_code=None):
-    """Clear NAV cache for a specific fund or all funds."""
-    if fund_code:
-        cache_key = f"nav_{fund_code}"
-        cache.delete(cache_key)
-        # Also clear mfdata cache
+    from django.db import transaction, DatabaseError
+    import time
+    
+    max_retries = 3
+    retry_delay = 1  # seconds
+    
+    for attempt in range(max_retries):
         try:
-            from .mfdata_service import clear_mfdata_cache
-            clear_mfdata_cache(fund_code)
-        except:
-            pass
-        logger.info(f"Cleared NAV cache for fund {fund_code}")
-    else:
-        # Clear all NAV caches (pattern matching would require Redis backend)
-        # For now, we'll clear individual funds when they're updated
-        logger.info("Cache will be cleared for individual funds as they're updated")
+            from .mfdata_service import fetch_nav_history
+            from datetime import datetime, timedelta
+            
+            # Calculate date range for 1 year
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=365)
+            
+            # Try with date range first
+            history_data = fetch_nav_history(
+                fund.scheme_code, 
+                start_date=start_date.strftime('%Y-%m-%d'),
+                end_date=end_date.strftime('%Y-%m-%d'),
+                limit=500
+            )
+            
+            # If date range returns insufficient data, fall back to limit
+            if not history_data or len(history_data) < 200:
+                history_data = fetch_nav_history(fund.scheme_code, limit=1000)
+            
+            if not history_data:
+                return
+            
+            # Use transaction for batch operations
+            with transaction.atomic():
+                # Batch create/update history entries
+                to_create = []
+                to_update = []
+                
+                # Get existing dates for this fund
+                existing_dates = set(
+                    NAVHistory.objects.filter(fund=fund)
+                    .values_list('date', flat=True)
+                )
+                
+                for entry in history_data:
+                    nav_date = datetime.strptime(entry['date'], '%Y-%m-%d').date()
+                    nav_value = Decimal(str(entry['nav']))
+                    
+                    if nav_date in existing_dates:
+                        to_update.append({
+                            'fund': fund,
+                            'date': nav_date,
+                            'nav': nav_value
+                        })
+                    else:
+                        to_create.append(
+                            NAVHistory(
+                                fund=fund,
+                                date=nav_date,
+                                nav=nav_value
+                            )
+                        )
+                
+                # Bulk operations
+                if to_create:
+                    NAVHistory.objects.bulk_create(to_create, batch_size=100, ignore_conflicts=True)
+                
+                if to_update:
+                    # Update existing entries
+                    for item in to_update:
+                        NAVHistory.objects.filter(
+                            fund=item['fund'],
+                            date=item['date']
+                        ).update(nav=item['nav'])
+                
+                logger.info(f"Saved {len(history_data)} NAV history entries for {fund.scheme_code}")
+                return  # Success, exit retry loop
+            
+        except DatabaseError as e:
+            if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                logger.warning(f"Database locked for {fund.scheme_code}, retry {attempt + 1}/{max_retries}")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+                continue
+            else:
+                raise
+        except Exception as e:
+            logger.error(f"Failed to fetch NAV history from mfdata.in for {fund.scheme_code}: {e}")
+            break
 
 
 def _save_nav_history(fund, nav_data):
-    """Bulk save NAV history entries."""
-    existing_dates = set(
-        NAVHistory.objects.filter(fund=fund).values_list('date', flat=True)
-    )
-    to_create = []
-    for entry in nav_data:
+    """Save NAV history data to database."""
+    from django.db import transaction, DatabaseError
+    from decimal import Decimal
+    import time
+    
+    max_retries = 3
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
         try:
-            date_str = entry['date']
-            nav = float(entry['nav'])
-            
-            # Try different date formats
-            for fmt in ['%d-%m-%Y', '%d-%b-%Y', '%d-%B-%Y']:
+            to_create = []
+            for entry in nav_data:
                 try:
-                    d = datetime.strptime(date_str, fmt).date()
-                    break
-                except ValueError:
+                    date_str = entry['date']
+                    nav_str = entry['nav']
+                    
+                    # Parse date
+                    for fmt in ['%d-%m-%Y', '%d-%b-%Y', '%d-%B-%Y']:
+                        try:
+                            nav_date = datetime.strptime(date_str, fmt).date()
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        continue  # Skip if date can't be parsed
+                    
+                    # Parse NAV
+                    nav_value = Decimal(nav_str)
+                    
+                    to_create.append(
+                        NAVHistory(
+                            fund=fund,
+                            date=nav_date,
+                            nav=nav_value
+                        )
+                    )
+                    
+                except (ValueError, KeyError):
                     continue
-            else:
-                # Skip if no format matched
-                logger.warning(f"Skipping history entry with invalid date: {date_str}")
-                continue
             
-            if d not in existing_dates:
-                to_create.append(NAVHistory(fund=fund, date=d, nav=nav))
-        except (ValueError, KeyError):
-            continue
-
-    if to_create:
-        NAVHistory.objects.bulk_create(to_create, ignore_conflicts=True)
-        logger.info(f"Saved {len(to_create)} NAV history entries for {fund.scheme_code}")
+            if to_create:
+                with transaction.atomic():
+                    NAVHistory.objects.bulk_create(to_create, batch_size=100, ignore_conflicts=True)
+                    logger.info(f"Saved {len(to_create)} NAV history entries for {fund.scheme_code}")
+            return  # Success
+            
+        except DatabaseError as e:
+            if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                logger.warning(f"Database locked for {fund.scheme_code} history save, retry {attempt + 1}/{max_retries}")
+                time.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+            else:
+                raise
+        except Exception as e:
+            logger.error(f"Failed to save NAV history for {fund.scheme_code}: {e}")
+            break
 
 
 def refresh_all_nav_bulk(user_portfolio):
     """
     Refresh NAV for all funds using mfdata.in bulk endpoint.
+    Falls back to individual refresh if bulk fails.
     """
     from portfolio.models import PortfolioFund
     
@@ -600,58 +487,87 @@ def refresh_all_nav_bulk(user_portfolio):
         logger.warning("No funds found in portfolio")
         return
     
-    # Use mfdata.in bulk endpoint
-    from .mfdata_service import fetch_bulk_nav
-    bulk_nav_data = fetch_bulk_nav(scheme_codes)
-    
-    if not bulk_nav_data:
-        logger.error("No NAV data received from bulk endpoint")
-        raise Exception("Failed to fetch NAV data")
-    
-    logger.info(f"Successfully fetched bulk NAV data for {len(bulk_nav_data)} funds")
-    
-    # Update each fund
-    updated_count = 0
-    for pf in holdings:
-        code = str(pf.fund.scheme_code)
-        if code in bulk_nav_data:
-            nav_data = bulk_nav_data[code]
+    # Try bulk refresh first
+    try:
+        from .mfdata_service import fetch_bulk_nav
+        bulk_nav_data = fetch_bulk_nav(scheme_codes)
+        
+        if bulk_nav_data:
+            logger.info(f"Successfully fetched bulk NAV data for {len(bulk_nav_data)} funds")
             
-            # Update fund with rich data
-            from decimal import Decimal
-            pf.fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
-            pf.fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
-            pf.fund.nav_last_updated = timezone.now()
+            # Update each fund
+            updated_count = 0
+            for pf in holdings:
+                code = str(pf.fund.scheme_code)
+                if code in bulk_nav_data:
+                    nav_data = bulk_nav_data[code]
+                    
+                    # Update fund with rich data
+                    from decimal import Decimal
+                    pf.fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
+                    pf.fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
+                    pf.fund.nav_last_updated = timezone.now()
+                    
+                    # Update all available fields from mfdata.in
+                    if 'expense_ratio' in nav_data and nav_data['expense_ratio']:
+                        pf.fund.expense_ratio = Decimal(str(nav_data['expense_ratio']))
+                    
+                    if 'aum' in nav_data and nav_data['aum']:
+                        # Convert from absolute value to crores
+                        aum_cr = nav_data['aum'] / 10000000
+                        pf.fund.aum = Decimal(str(aum_cr))
+                    
+                    # Save day change information
+                    if 'day_change' in nav_data and nav_data['day_change'] is not None:
+                        pf.fund.day_change = Decimal(str(nav_data['day_change']))
+                    
+                    if 'day_change_pct' in nav_data and nav_data['day_change_pct'] is not None:
+                        pf.fund.day_change_pct = Decimal(str(nav_data['day_change_pct']))
+                    
+                    # Save rating and classification
+                    if 'morningstar' in nav_data and nav_data['morningstar'] is not None:
+                        pf.fund.morningstar_rating = nav_data['morningstar']
+                    
+                    if 'family_id' in nav_data and nav_data['family_id'] is not None:
+                        pf.fund.family_id = nav_data['family_id']
+                    
+                    if 'plan_type' in nav_data and nav_data['plan_type']:
+                        pf.fund.plan_type = nav_data['plan_type']
+                    
+                    # Update/verify existing fields
+                    if 'category' in nav_data and nav_data['category']:
+                        pf.fund.category = nav_data['category']
+                    
+                    if 'amc_name' in nav_data and nav_data['amc_name']:
+                        pf.fund.amc = nav_data['amc_name']
+                    
+                    pf.fund.save()
+                    updated_count += 1
+                    
+                    logger.info(f"Updated {pf.fund.scheme_name}: NAV={pf.fund.current_nav} ({pf.fund.day_change_pct}%) | ER={pf.fund.expense_ratio}% | Rating={pf.fund.morningstar_rating}")
             
-            # Update additional fields if available
-            if 'expense_ratio' in nav_data and nav_data['expense_ratio']:
-                pf.fund.expense_ratio = Decimal(str(nav_data['expense_ratio']))
-            
-            if 'aum' in nav_data and nav_data['aum']:
-                # Convert from absolute value to crores
-                aum_cr = nav_data['aum'] / 10000000
-                pf.fund.aum = Decimal(str(aum_cr))
-            
-            pf.fund.save()
-            updated_count += 1
-            
-            logger.info(f"Updated {pf.fund.scheme_name}: {pf.fund.current_nav} ({nav_data.get('day_change_pct', 0)}%)")
-    
-    logger.info(f"Bulk NAV refresh completed: {updated_count}/{len(holdings)} funds updated")
+            logger.info(f"Bulk NAV refresh completed: {updated_count}/{len(holdings)} funds updated")
+            return
+        
+    except Exception as e:
+        logger.error(f"Bulk NAV refresh failed: {e}")
+        logger.info("Falling back to individual fund refresh")
+        
+        # Fallback to individual refresh
+        for pf in holdings:
+            try:
+                fetch_fund_nav(pf.fund, fetch_history=False)
+            except Exception as e:
+                logger.error(f"Individual refresh failed for {pf.fund.scheme_code}: {e}")
 
 
 def refresh_all_nav(user_portfolio):
     """
     Refresh NAV for all funds in the portfolio.
-    Now optimized to skip mfapi.in when it's down.
     """
-    from portfolio.models import PortfolioFund
+    funds = MutualFund.objects.filter(portfoliofund__portfolio=user_portfolio)
     
-    # Get only funds that are in user portfolios
-    portfolio_funds = PortfolioFund.objects.select_related('fund').values_list('fund', flat=True).distinct()
-    funds = MutualFund.objects.filter(id__in=portfolio_funds, is_active=True)
-    
-    logger.info(f"Scheduled refresh: Found {funds.count()} funds in portfolios")
+    logger.info(f"Starting NAV refresh for {funds.count()} funds")
     
     success = errors = 0
     for fund in funds:
@@ -659,96 +575,13 @@ def refresh_all_nav(user_portfolio):
             # Fetch history during scheduled refresh (runs at midnight when load is low)
             fetch_fund_nav(fund, fetch_history=True)
             success += 1
-            time.sleep(0.2)  # Slightly higher rate limit for history fetch
+            import time
+            time.sleep(0.5)  # Increased delay to reduce database contention
         except Exception as e:
             errors += 1
             logger.error(f"NAV refresh error for {fund.scheme_code}: {e}")
     logger.info(f"NAV refresh complete: {success} success, {errors} errors.")
     return success, errors
-
-
-def fetch_fund_details(scheme_code):
-    """
-    Fetch detailed fund information when a fund is added to portfolio.
-    This fetches additional data beyond the basic search info.
-    
-    Args:
-        scheme_code: The scheme code of the fund
-        
-    Returns:
-        dict: Detailed fund information or None if failed
-    """
-    from .models import MutualFund
-    
-    try:
-        # Try mfapi.in first for detailed info
-        url = f"https://api.mfapi.in/mf/{scheme_code}"
-        response = _fetch_with_retry(url)
-        data = json.loads(response)
-        
-        if data.get('status') == 'success' and 'data' in data:
-            fund_data = data['data']
-            
-            # Update the fund in database with detailed info
-            fund = MutualFund.objects.get(scheme_code=scheme_code)
-            
-            # Update fields that are available
-            if 'amc' in fund_data:
-                fund.amc = fund_data['amc'].get('name', '')
-            if 'schemeCategory' in fund_data:
-                fund.fund_category = fund_data['schemeCategory']
-            if 'schemeType' in fund_data:
-                fund.fund_type = fund_data['schemeType']
-            if 'plan' in fund_data:
-                fund.plan = fund_data['plan']
-            if 'fundManager' in fund_data:
-                fund.fund_manager = fund_data['fundManager']
-            if 'expenseRatio' in fund_data:
-                try:
-                    fund.expense_ratio = float(fund_data['expenseRatio'])
-                except:
-                    pass
-            
-            fund.save(update_fields=[
-                'amc', 'fund_category', 'fund_type', 'plan',
-                'fund_manager', 'expense_ratio'
-            ])
-            
-            return fund_data
-            
-    except Exception as e:
-        logger.warning(f"Failed to fetch details for scheme {scheme_code} from mfapi.in: {e}")
-    
-    # Fallback: try to get from AMFI NAV data for basic info
-    try:
-        url = f"https://api.mfapi.in/mf/{scheme_code}"
-        response = _fetch_with_retry(url)
-        data = json.loads(response)
-        
-        if data.get('status') == 'success' and 'data' in data:
-            fund_data = data['data']
-            fund = MutualFund.objects.get(scheme_code=scheme_code)
-            
-            # Update basic NAV info
-            if 'nav' in fund_data:
-                try:
-                    fund.current_nav = float(fund_data['nav'])
-                except:
-                    pass
-            if 'date' in fund_data:
-                from datetime import datetime
-                try:
-                    fund.nav_date = datetime.strptime(fund_data['date'], '%d-%b-%Y').date()
-                except:
-                    pass
-            
-            fund.save(update_fields=['current_nav', 'nav_date'])
-            return fund_data
-            
-    except Exception as e:
-        logger.error(f"Failed to fetch any details for scheme {scheme_code}: {e}")
-    
-    return None
 
 
 def search_funds(query, limit=20):
@@ -825,3 +658,272 @@ def search_funds(query, limit=20):
     # For now, just return what we have
     
     return results
+
+
+def fetch_fund_details(scheme_code):
+    """
+    Fetch detailed fund information when a fund is added to portfolio.
+    This fetches additional data beyond the basic search info.
+    
+    Args:
+        scheme_code: The scheme code of the fund
+        
+    Returns:
+        dict: Detailed fund information or None if failed
+    """
+    from .models import MutualFund
+    
+    try:
+        # Try mfapi.in first for detailed info
+        url = f"https://api.mfapi.in/mf/{scheme_code}"
+        response = _fetch_with_retry(url)
+        data = json.loads(response)
+        
+        if data.get('status') == 'success' and 'data' in data:
+            fund_data = data['data']
+            
+            # Update the fund in database with detailed info
+            fund = MutualFund.objects.get(scheme_code=scheme_code)
+            
+            # Update fields that are available
+            if 'amc' in fund_data:
+                fund.amc = fund_data['amc'].get('name', '')
+            if 'schemeCategory' in fund_data:
+                fund.fund_category = fund_data['schemeCategory']
+            if 'schemeType' in fund_data:
+                fund.fund_type = fund_data['schemeType']
+            if 'plan' in fund_data:
+                fund.plan = fund_data['plan']
+            if 'fundManager' in fund_data:
+                fund.fund_manager = fund_data['fundManager']
+            if 'investmentObjective' in fund_data:
+                fund.investment_objective = fund_data['investmentObjective']
+            
+            fund.save()
+            logger.info(f"Updated fund details for {scheme_code}")
+            
+            return fund_data
+            
+    except Exception as e:
+        logger.error(f"Failed to fetch fund details for {scheme_code}: {e}")
+    
+    return None
+
+
+def seed_fund_database(force=False):
+    """Seed local DB with full AMFI fund list.
+
+    Strategy:
+      1. Try AMFI NAVAll.txt (primary - more reliable).
+      2. If that fails, fall back to mfapi.in.
+    """
+    status, _ = SeedStatus.objects.get_or_create(pk=1)
+    if status.status == 'done' and not force:
+        logger.info("Database already seeded. Use force=True to re-seed.")
+        return status
+
+    status.status = 'running'
+    status.error_message = ''
+    status.save()
+
+    funds_data = None
+    source_used = "amfi"
+
+    # --- Primary: AMFI NAVAll.txt ---
+    try:
+        funds_data = _fetch_funds_from_amfi()
+        logger.info(f"AMFI returned {len(funds_data)} fund records")
+    except Exception as exc:
+        logger.warning(f"AMFI seed failed: {exc}. Trying mfapi.in fallback…")
+
+    # --- Fallback: mfapi.in ---
+    if not funds_data:
+        try:
+            funds_data = _fetch_funds_from_mfapi()
+            source_used = "mfapi"
+            logger.info(f"mfapi.in returned {len(funds_data)} fund records")
+        except Exception as exc:
+            msg = f"Both AMFI and mfapi.in fallback failed: {exc}"
+            logger.error(msg)
+            status.status = 'failed'
+            status.error_message = msg
+            status.save()
+            raise RuntimeError(msg) from exc
+
+    if not funds_data:
+        msg = "No fund data returned from any source"
+        status.status = 'failed'
+        status.error_message = msg
+        status.save()
+        raise RuntimeError(msg)
+
+    try:
+        created, updated = _bulk_upsert_funds(funds_data)
+        total = created + updated
+        status.status = 'done'
+        status.last_seeded = timezone.now()
+        status.total_funds = total
+        status.error_message = f"Source: {source_used}"
+        status.save()
+        logger.info(
+            f"Seeding complete ({source_used}): "
+            f"{created} created, {updated} updated, {total} total."
+        )
+        return status
+
+    except Exception as exc:
+        logger.error(f"DB upsert failed: {exc}")
+        status.status = 'failed'
+        status.error_message = str(exc)
+        status.save()
+        raise
+
+
+def _fetch_funds_from_mfapi():
+    """Return list of {schemeCode, schemeName} dicts from mfapi.in."""
+    raw = _fetch_with_retry(MFAPI_BASE)
+    return json.loads(raw)
+
+
+def _fetch_funds_from_amfi():
+    """
+    Parse the AMFI NAVAll.txt file as a fallback fund-list source.
+
+    File format (pipe-delimited, but actually semicolon in practice):
+        Scheme Code;ISIN Div Payout/IDCW;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+
+    Section headers look like:
+        Open Ended Schemes(Debt Scheme - Banking and PSU Fund)
+    """
+    logger.info("Falling back to AMFI NAVAll.txt for fund list…")
+    raw = _fetch_with_retry(AMFI_NAV_URL, timeout=60)
+    text = raw.decode("utf-8", errors="replace")
+
+    funds = []
+    current_amc = ""
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        # Data rows are semicolon-delimited; headers/AMC names have no semicolons.
+        if ";" not in line:
+            # Track AMC name (ignore category sub-headers like "Open Ended Schemes(…)")
+            if not line.startswith("Open Ended") and not line.startswith("Close Ended") \
+                    and not line.startswith("Interval") and "(" not in line:
+                current_amc = line
+            continue
+
+        parts = line.split(";")
+        if len(parts) < 4:
+            continue
+
+        try:
+            scheme_code = int(parts[0].strip())
+        except ValueError:
+            continue  # skip any header rows that slipped through
+
+        # Extract ISIN (prefer Div Payout/IDCW ISIN)
+        isin = parts[1].strip() if len(parts) > 1 else ""
+        if isin == "-" or not isin:
+            isin = parts[2].strip() if len(parts) > 2 else ""  # Try Div Reinvestment ISIN
+            
+        scheme_name = parts[3].strip()
+        
+        # Extract NAV and date if available
+        nav = None
+        nav_date = None
+        if len(parts) >= 6:
+            try:
+                nav_str = parts[4].strip()
+                if nav_str and nav_str != 'NA':
+                    nav = float(nav_str)
+                
+                date_str = parts[5].strip()
+                if date_str and date_str != 'NA':
+                    # Parse date in DD-MMM-YYYY format
+                    try:
+                        nav_date = datetime.strptime(date_str, '%d-%b-%Y').date()
+                    except:
+                        # Try other formats
+                        try:
+                            nav_date = datetime.strptime(date_str, '%d-%b-%y').date()
+                        except:
+                            pass
+            except:
+                pass
+        
+        if scheme_code and scheme_name:
+            # Only store Direct Plan - Growth funds to optimize memory
+            if 'direct plan' in scheme_name.lower() and 'growth' in scheme_name.lower():
+                funds.append({
+                    "schemeCode": scheme_code,
+                    "schemeName": scheme_name,
+                    "isin": isin,
+                    # Skip AMC, NAV, and other data for optimization
+                    # These will be fetched when fund is added to portfolio
+                })
+
+    logger.info(f"AMFI fallback: parsed {len(funds)} funds")
+    return funds
+
+
+def _bulk_upsert_funds(funds_data):
+    """Upsert a list of fund dicts into MutualFund; return (created, updated)."""
+    created = updated = 0
+    
+    # Process in batches for speed + memory efficiency
+    BATCH = 500
+    for i in range(0, len(funds_data), BATCH):
+        batch = funds_data[i: i + BATCH]
+        existing = {
+            mf.scheme_code: mf
+            for mf in MutualFund.objects.filter(
+                scheme_code__in=[f["schemeCode"] for f in batch if f.get("schemeCode")]
+            )
+        }
+        to_create = []
+        to_update = []
+        for item in batch:
+            code = item.get("schemeCode")
+            name = (item.get("schemeName") or "").strip()
+            isin = (item.get("isin") or "").strip()
+            
+            if not code or not name:
+                continue
+                
+            if code in existing:
+                obj = existing[code]
+                dirty = False
+                if obj.scheme_name != name:
+                    obj.scheme_name = name
+                    dirty = True
+                if obj.isin != isin:
+                    obj.isin = isin
+                    dirty = True
+                if dirty:
+                    to_update.append(obj)
+                    updated += 1
+            else:
+                to_create.append(
+                    MutualFund(
+                        scheme_code=code,
+                        scheme_name=name,
+                        isin=isin,
+                        is_active=False  # Will be activated when added to portfolio
+                    )
+                )
+                created += 1
+        
+        # Bulk operations
+        if to_create:
+            MutualFund.objects.bulk_create(to_create, batch_size=100)
+        if to_update:
+            MutualFund.objects.bulk_update(
+                to_update, 
+                fields=['scheme_name', 'isin'], 
+                batch_size=100
+            )
+    
+    return created, updated

@@ -55,7 +55,6 @@ logger = logging.getLogger(__name__)
 
 # Import base classes
 from .fetcher_base import FactsheetFetcher, FetchError
-from .fetcher_captnemo import CaptnemoFetcher
 
 MFAPI_BASE   = "https://api.mfapi.in/mf"
 AMFI_PORTAL  = "https://www.amfiindia.com"
@@ -421,6 +420,47 @@ class MFAPIFetcher(FactsheetFetcher):
         return result
 
 
+class MFADataFetcher(FactsheetFetcher):
+    """
+    Fetcher that uses mfdata.in for holdings data like the factsheet view
+    """
+
+    def fetch(self, fund, month: date) -> dict:
+        result = {
+            "fund_manager": "",
+            "amc":  fund.amc or "",
+            "category": fund.category or "",
+            "scheme_type": fund.fund_type or "",
+            "objective": "",
+            "aum": None,
+            "expense_ratio": None,
+            "holdings": [],
+            "sectors": [],
+            "source": "mfdata",
+            "errors": [],
+        }
+
+        # Try to get fund manager from existing factsheet first
+        try:
+            latest_factsheet = Factsheet.objects.filter(fund=fund).latest('month')
+            if latest_factsheet.fund_manager:
+                result["fund_manager"] = latest_factsheet.fund_manager
+        except Factsheet.DoesNotExist:
+            pass
+
+        # Try mfapi metadata as backup
+        try:
+            meta = _fetch_mfapi_meta(fund.scheme_code)
+            result["amc"]         = meta["amc"]   or result["amc"]
+            result["category"]    = meta["category"] or result["category"]
+            result["scheme_type"] = meta["scheme_type"] or result["scheme_type"]
+        except FetchError as exc:
+            result["errors"].append(f"mfapi: {exc}")
+            logger.warning(f"mfapi meta failed for {fund.scheme_code}: {exc}")
+
+        return result
+
+
 class AMFIFetcher(FactsheetFetcher):
     """Standalone AMFI-only fetcher."""
 
@@ -452,7 +492,8 @@ class AMFIFetcher(FactsheetFetcher):
 _FETCHER_REGISTRY = {
     "mfapi": MFAPIFetcher,
     "amfi":  AMFIFetcher,
-    "captnemo": CaptnemoFetcher,
+    "enriched": MFADataFetcher,  # Use MFADataFetcher which avoids AMFI issues
+    "mfdata": MFADataFetcher,
 }
 
 
@@ -510,6 +551,18 @@ def fetch_factsheet_for_fund(fund, month=None, fetcher_name="mfapi"):
     # This also avoids AMFI dependency issues
     
     _generate_diff(fund, factsheet)
+    
+    # Trigger intelligent monitoring for metadata changes
+    try:
+        from alerts.intelligent_monitor import trigger_factsheet_monitoring
+        from django.core.cache import cache
+        cache_key = f"factsheet_monitor_trigger:{fund.scheme_code}"
+        if not cache.get(cache_key):  # Avoid duplicate triggers
+            trigger_factsheet_monitoring(fund)
+            cache.set(cache_key, True, timeout=86400)  # 24 hour cooldown
+    except Exception as e:
+        logger.warning(f"Failed to trigger factsheet monitoring: {e}")
+    
     return factsheet
 
 
@@ -557,7 +610,7 @@ def run_monthly_factsheet_refresh(user=None, fetcher_name="enriched", enrich_fir
     Args:
         user: Specific user to refresh funds for
         fetcher_name: Which fetcher to use ("enriched" or "mfapi")
-        enrich_first: Whether to enrich funds from captnemo API first
+        enrich_first: Whether to enrich funds with additional data
     """
     log = FactsheetFetchLog.objects.create()
     month = date.today().replace(day=1)

@@ -15,6 +15,10 @@ class Alert(models.Model):
         ('sector_change', 'Sector Allocation Change'),
         ('system', 'System Alert'),
         ('factsheet_error', 'Factsheet Error'),
+        ('risk_alert', 'Risk Metric Alert'),
+        ('aum_change', 'AUM Change'),
+        ('expense_ratio_change', 'Expense Ratio Change'),
+        ('rating_change', 'Rating Change'),
     ]
 
     SEVERITY = [
@@ -43,3 +47,41 @@ class Alert(models.Model):
     def mark_read(self):
         self.is_read = True
         self.save(update_fields=['is_read'])
+
+
+class AlertPreference(models.Model):
+    """User preferences for different types of alerts"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='alert_preferences')
+    
+    # Email notifications
+    email_nav_changes = models.BooleanField(default=True, help_text="NAV movements > 5%")
+    email_holdings_changes = models.BooleanField(default=True, help_text="New/exited holdings")
+    email_sector_changes = models.BooleanField(default=False, help_text="Sector allocation changes")
+    email_risk_alerts = models.BooleanField(default=True, help_text="Risk metric warnings")
+    email_metadata_changes = models.BooleanField(default=False, help_text="Expense ratio, AUM, rating changes")
+    
+    # In-app notifications
+    app_nav_changes = models.BooleanField(default=True)
+    app_holdings_changes = models.BooleanField(default=True)
+    app_sector_changes = models.BooleanField(default=True)
+    app_risk_alerts = models.BooleanField(default=True)
+    app_metadata_changes = models.BooleanField(default=True)
+    
+    # Thresholds
+    nav_threshold = models.DecimalField(max_digits=5, decimal_places=2, default=5.0, help_text="Percentage")
+    weight_change_threshold = models.DecimalField(max_digits=5, decimal_places=2, default=2.0, help_text="Percentage")
+    sector_change_threshold = models.DecimalField(max_digits=5, decimal_places=2, default=5.0, help_text="Percentage")
+    
+    # Daily digest
+    daily_digest_enabled = models.BooleanField(default=False)
+    digest_time = models.TimeField(default="09:00", help_text="Time for daily digest email")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Alert Preference"
+        verbose_name_plural = "Alert Preferences"
+    
+    def __str__(self):
+        return f"{self.user.username}'s Alert Preferences"

@@ -24,7 +24,7 @@ def factsheet_refresh_job():
     from factsheets.fetcher import run_monthly_factsheet_refresh
     logger.info("Scheduled: Starting monthly factsheet refresh...")
     try:
-        log = run_monthly_factsheet_refresh()
+        log = run_monthly_factsheet_refresh(fetcher_name="enriched")
         logger.info(f"Factsheet refresh done: {log.funds_processed} processed, {log.errors} errors")
     except Exception as e:
         logger.error(f"Factsheet refresh job failed: {e}")
@@ -48,6 +48,8 @@ def fund_seed_job():
             logger.info("No funds in database, skipping monthly refresh.")
     except Exception as e:
         logger.error(f"Monthly fund refresh job failed: {e}")
+
+
 
 
 def start_scheduler():

@@ -5,6 +5,23 @@
 {% block extra_head %}
 <style>
   .lot-row:hover { background: var(--hover-bg); }
+  .btn-group .btn {
+    min-width: 50px;
+    font-weight: 500;
+  }
+  .btn-group .btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+  }
+  .btn-group .btn-outline-secondary {
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+    background-color: var(--card-bg);
+  }
+  .btn-group .btn-outline-secondary:hover {
+    background-color: var(--hover-bg);
+    color: var(--text-primary);
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -84,7 +101,29 @@
   <div class="col-lg-8">
     <div class="mft-card">
       <div class="mft-card-header">
-        <h5 class="mft-card-title"><i class="bi bi-graph-up me-2"></i>NAV History (1Y)</h5>
+        <div class="d-flex justify-content-between align-items-center">
+          <h5 class="mft-card-title"><i class="bi bi-graph-up me-2"></i>NAV History</h5>
+          <div class="btn-group btn-group-sm" role="group">
+            {% if '1y' in available_periods %}
+            <a href="?period=1y" class="btn {% if period == '1y' %}btn-primary{% else %}btn-outline-secondary{% endif %}">1Y</a>
+            {% endif %}
+            {% if '3y' in available_periods %}
+            <a href="?period=3y" class="btn {% if period == '3y' %}btn-primary{% else %}btn-outline-secondary{% endif %}">3Y</a>
+            {% endif %}
+            {% if '5y' in available_periods %}
+            <a href="?period=5y" class="btn {% if period == '5y' %}btn-primary{% else %}btn-outline-secondary{% endif %}">5Y</a>
+            {% endif %}
+            <a href="?period=all" class="btn {% if period == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+          </div>
+        </div>
+        {% if oldest_date and newest_date %}
+        <div class="text-muted small mt-1">
+          Data from {{ oldest_date|date:"d M Y" }} to {{ newest_date|date:"d M Y" }}
+          {% if period != 'all' %}
+          (showing {{ period|upper }})
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
       <div class="chart-container" style="height:280px; padding:16px;">
         <canvas id="navChart"></canvas>
@@ -113,26 +152,238 @@
           </span>
         </div>
         <div class="summary-divider"></div>
-        {% if latest_factsheet %}
-        <div class="summary-row">
-          <span class="summary-label">Fund Manager</span>
-          <span class="summary-value">{{ latest_factsheet.fund_manager|default:"—" }}</span>
-        </div>
         <div class="summary-row">
           <span class="summary-label">Category</span>
-          <span class="summary-value">{{ latest_factsheet.category|default:"—" }}</span>
+          <span class="summary-value">{{ pf.fund.category|default:"—" }}</span>
         </div>
-        {% if latest_factsheet.expense_ratio %}
+        {% if pf.fund.morningstar_rating %}
         <div class="summary-row">
-          <span class="summary-label">Expense Ratio</span>
-          <span class="summary-value">{{ latest_factsheet.expense_ratio|floatformat:2 }}%</span>
+          <span class="summary-label">Morningstar</span>
+          <span class="summary-value">
+            {% for i in "12345"|make_list %}{% if forloop.counter <= pf.fund.morningstar_rating %}<i class="bi bi-star-fill text-warning"></i>{% else %}<i class="bi bi-star text-muted"></i>{% endif %}{% endfor %}
+          </span>
         </div>
         {% endif %}
+        {% if pf.fund.expense_ratio %}
+        <div class="summary-row">
+          <span class="summary-label">Expense Ratio</span>
+          <span class="summary-value">{{ pf.fund.expense_ratio|floatformat:2 }}%</span>
+        </div>
+        {% endif %}
+        {% if pf.fund.aum %}
+        <div class="summary-row">
+          <span class="summary-label">AUM</span>
+          <span class="summary-value">₹{{ pf.fund.aum|floatformat:0 }} Cr</span>
+        </div>
         {% endif %}
         <div class="mt-3">
           <a href="/factsheets/{{ pf.fund.pk }}/" class="btn mft-btn-outline btn-sm w-100">
             <i class="bi bi-file-text me-1"></i>View Factsheet
           </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Returns & Risk Metrics -->
+<div class="row g-3 mb-4">
+  <!-- Returns -->
+  <div class="col-lg-6">
+    <div class="mft-card h-100">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-graph-up-arrow me-2"></i>Returns (CAGR)</h5>
+      </div>
+      <div class="p-3">
+        <div class="row g-2">
+          {% if pf.fund.return_1m is not None %}
+          <div class="col-4">
+            <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
+              <div class="small text-muted">1M</div>
+              <div class="fw-bold {% if pf.fund.return_1m >= 0 %}text-gain{% else %}text-loss{% endif %}">
+                {% if pf.fund.return_1m >= 0 %}+{% endif %}{{ pf.fund.return_1m|floatformat:1 }}%
+              </div>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.return_3m is not None %}
+          <div class="col-4">
+            <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
+              <div class="small text-muted">3M</div>
+              <div class="fw-bold {% if pf.fund.return_3m >= 0 %}text-gain{% else %}text-loss{% endif %}">
+                {% if pf.fund.return_3m >= 0 %}+{% endif %}{{ pf.fund.return_3m|floatformat:1 }}%
+              </div>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.return_6m is not None %}
+          <div class="col-4">
+            <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
+              <div class="small text-muted">6M</div>
+              <div class="fw-bold {% if pf.fund.return_6m >= 0 %}text-gain{% else %}text-loss{% endif %}">
+                {% if pf.fund.return_6m >= 0 %}+{% endif %}{{ pf.fund.return_6m|floatformat:1 }}%
+              </div>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.return_1y is not None %}
+          <div class="col-4">
+            <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
+              <div class="small text-muted">1Y</div>
+              <div class="fw-bold {% if pf.fund.return_1y >= 0 %}text-gain{% else %}text-loss{% endif %}">
+                {% if pf.fund.return_1y >= 0 %}+{% endif %}{{ pf.fund.return_1y|floatformat:1 }}%
+              </div>
+              {% if pf.fund.rank_1y %}<div class="small text-muted">Rank #{{ pf.fund.rank_1y }}</div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.return_3y is not None %}
+          <div class="col-4">
+            <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
+              <div class="small text-muted">3Y</div>
+              <div class="fw-bold {% if pf.fund.return_3y >= 0 %}text-gain{% else %}text-loss{% endif %}">
+                {% if pf.fund.return_3y >= 0 %}+{% endif %}{{ pf.fund.return_3y|floatformat:1 }}%
+              </div>
+              {% if pf.fund.rank_3y %}<div class="small text-muted">Rank #{{ pf.fund.rank_3y }}</div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.return_5y is not None %}
+          <div class="col-4">
+            <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
+              <div class="small text-muted">5Y</div>
+              <div class="fw-bold {% if pf.fund.return_5y >= 0 %}text-gain{% else %}text-loss{% endif %}">
+                {% if pf.fund.return_5y >= 0 %}+{% endif %}{{ pf.fund.return_5y|floatformat:1 }}%
+              </div>
+              {% if pf.fund.rank_5y %}<div class="small text-muted">Rank #{{ pf.fund.rank_5y }}</div>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+        {% if pf.fund.total_in_category %}
+        <div class="text-muted small mt-2 text-center">Out of {{ pf.fund.total_in_category }} funds in category</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  
+  <!-- Risk & Ratios -->
+  <div class="col-lg-6">
+    <div class="mft-card h-100">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-shield-check me-2"></i>Risk & Ratios</h5>
+      </div>
+      <div class="p-3">
+        <div class="row g-2">
+          {% if pf.fund.sharpe_ratio is not None %}
+          <div class="col-6">
+            <div class="summary-row">
+              <span class="summary-label">Sharpe Ratio</span>
+              <span class="summary-value font-mono">{{ pf.fund.sharpe_ratio|floatformat:2 }}</span>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.alpha is not None %}
+          <div class="col-6">
+            <div class="summary-row">
+              <span class="summary-label">Alpha</span>
+              <span class="summary-value font-mono {% if pf.fund.alpha >= 0 %}text-gain{% else %}text-loss{% endif %}">{{ pf.fund.alpha|floatformat:2 }}</span>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.beta is not None %}
+          <div class="col-6">
+            <div class="summary-row">
+              <span class="summary-label">Beta</span>
+              <span class="summary-value font-mono">{{ pf.fund.beta|floatformat:2 }}</span>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.std_deviation is not None %}
+          <div class="col-6">
+            <div class="summary-row">
+              <span class="summary-label">Std Deviation</span>
+              <span class="summary-value font-mono">{{ pf.fund.std_deviation|floatformat:1 }}%</span>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.sortino_ratio is not None %}
+          <div class="col-6">
+            <div class="summary-row">
+              <span class="summary-label">Sortino</span>
+              <span class="summary-value font-mono">{{ pf.fund.sortino_ratio|floatformat:2 }}</span>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.treynor_ratio is not None %}
+          <div class="col-6">
+            <div class="summary-row">
+              <span class="summary-label">Treynor</span>
+              <span class="summary-value font-mono">{{ pf.fund.treynor_ratio|floatformat:2 }}</span>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.pe_ratio is not None %}
+          <div class="col-6">
+            <div class="summary-row">
+              <span class="summary-label">P/E Ratio</span>
+              <span class="summary-value font-mono">{{ pf.fund.pe_ratio|floatformat:1 }}</span>
+            </div>
+          </div>
+          {% endif %}
+          {% if pf.fund.pb_ratio is not None %}
+          <div class="col-6">
+            <div class="summary-row">
+              <span class="summary-label">P/B Ratio</span>
+              <span class="summary-value font-mono">{{ pf.fund.pb_ratio|floatformat:1 }}</span>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Fund Info -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-12">
+    <div class="mft-card">
+      <div class="mft-card-header">
+        <h5 class="mft-card-title"><i class="bi bi-info-circle me-2"></i>Fund Information</h5>
+      </div>
+      <div class="p-3">
+        <div class="row">
+          {% if pf.fund.fund_manager %}
+          <div class="col-md-4 mb-2">
+            <span class="text-muted small">Fund Manager</span>
+            <div class="fw-medium">{{ pf.fund.fund_manager }}</div>
+          </div>
+          {% endif %}
+          {% if pf.fund.start_date %}
+          <div class="col-md-4 mb-2">
+            <span class="text-muted small">Launch Date</span>
+            <div class="fw-medium">{{ pf.fund.start_date|date:"d M Y" }}</div>
+          </div>
+          {% endif %}
+          {% if pf.fund.min_investment %}
+          <div class="col-md-4 mb-2">
+            <span class="text-muted small">Min Investment</span>
+            <div class="fw-medium">₹{{ pf.fund.min_investment|floatformat:0 }}</div>
+          </div>
+          {% endif %}
+          {% if pf.fund.min_sip %}
+          <div class="col-md-4 mb-2">
+            <span class="text-muted small">Min SIP</span>
+            <div class="fw-medium">₹{{ pf.fund.min_sip|floatformat:0 }}</div>
+          </div>
+          {% endif %}
+          {% if pf.fund.exit_load %}
+          <div class="col-md-8 mb-2">
+            <span class="text-muted small">Exit Load</span>
+            <div class="fw-medium">{{ pf.fund.exit_load }}</div>
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -293,15 +544,38 @@ if (navDates.length && navValues.length) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: ctx => `₹${ctx.parsed.y.toFixed(4)}`
+            label: ctx => `₹${ctx.parsed.y.toFixed(4)}`,
+            title: ctx => {
+              const date = new Date(ctx[0].label);
+              return date.toLocaleDateString('en-IN', { 
+                day: 'numeric', 
+                month: 'short', 
+                year: 'numeric' 
+              });
+            }
           }
         }
       },
       scales: {
         x: {
           grid: { color: gridColor },
-          ticks: { color: textColor, maxTicksLimit: 8,
-            callback: (val, i) => navDates[i] ? navDates[i].slice(0,7) : '' }
+          ticks: { 
+            color: textColor, 
+            maxTicksLimit: 8,
+            callback: (val, i) => {
+              if (!navDates[i]) return '';
+              const date = new Date(navDates[i]);
+              // For 'all' period, show year; for others, show month
+              if ('{{ period }}' === 'all') {
+                return date.getFullYear();
+              } else {
+                return date.toLocaleDateString('en-IN', { 
+                  month: 'short',
+                  year: date.getMonth() === 0 ? 'numeric' : undefined
+                });
+              }
+            }
+          }
         },
         y: {
           grid: { color: gridColor },

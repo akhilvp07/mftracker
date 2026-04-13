@@ -36,10 +36,30 @@ def dashboard(request):
     from funds.models import SeedStatus
     seed_status = SeedStatus.objects.filter(pk=1).first()
 
-    holdings_data = []
-    total_invested = Decimal('0')
-    total_current = Decimal('0')
+    # Auto-refresh NAV for funds that need it (check intelligently)
+    from .utils import bulk_check_and_refresh
+    import time
+    from datetime import datetime
+    
+    last_check = request.session.get('last_nav_auto_check', 0)
+    current_time = int(time.time())
+    current_hour = datetime.now().hour
+    
+    # Only check if:
+    # 1. Last check was more than 2 hours ago (reduced frequency)
+    # 2. It's between 7 PM - 11 PM on weekdays (when NAV updates happen)
+    if (current_time - last_check > 7200 and  # 2 hours = 7200 seconds
+        current_hour >= 19 and current_hour <= 23 and  # 7 PM to 11 PM
+        datetime.now().weekday() < 5):  # Monday to Friday
+        bulk_check_and_refresh(request, portfolio, fetch_history=False)
+        request.session['last_nav_auto_check'] = current_time
 
+    # Get sorting parameters
+    sort_by = request.GET.get('sort', 'fund_name')
+    sort_order = request.GET.get('order', 'asc')
+    
+    # Build holdings data
+    holdings_data = []
     for pf in holdings:
         # Calculate invested amount as effective cost of current holdings
         # This includes all purchases and redemptions
@@ -59,9 +79,30 @@ def dashboard(request):
             'gain': gain,
             'gain_pct': gain_pct,
             'xirr': xirr_val,
+            'nav': pf.fund.current_nav or Decimal('0'),
+            'day_change_pct': pf.fund.day_change_pct or Decimal('0'),
+            'total_units': pf.total_units,
         })
-        total_invested += invested
-        total_current += current
+
+    # Sort holdings data
+    sort_key_map = {
+        'fund_name': lambda x: x['pf'].fund.scheme_name.lower(),
+        'nav': lambda x: x['nav'],
+        'day_change': lambda x: x['day_change_pct'],
+        'units': lambda x: x['total_units'],
+        'invested': lambda x: x['invested'],
+        'current': lambda x: x['current'],
+        'gain_pct': lambda x: x['gain_pct'],
+        'xirr': lambda x: x['xirr'] or Decimal('-999'),
+    }
+    
+    if sort_by in sort_key_map:
+        reverse = sort_order == 'desc'
+        holdings_data.sort(key=sort_key_map[sort_by], reverse=reverse)
+    
+    # Calculate totals
+    total_invested = sum(item['invested'] for item in holdings_data)
+    total_current = sum(item['current'] for item in holdings_data)
 
     total_gain = total_current - total_invested
     total_gain_pct = (total_gain / total_invested * 100) if total_invested > 0 else Decimal('0')
@@ -97,6 +138,8 @@ def dashboard(request):
         'portfolio_xirr': portfolio_xirr,
         'seed_status': seed_status,
         'now': timezone.now(),
+        'current_sort': sort_by,
+        'current_order': sort_order,
     })
 
 
@@ -108,10 +151,97 @@ def fund_detail(request, pf_id):
     
     # Refresh fund data to get latest NAV
     pf.fund.refresh_from_db()
-
+    
+    # Get period from request (default: 1y)
+    period = request.GET.get('period', '1y')
+    
+    # Auto-refresh NAV if needed
+    from .utils import auto_refresh_if_needed
+    import time
+    from datetime import timedelta
+    
+    # Check for session-based auto-refresh flag (from middleware)
+    auto_refresh_info = request.session.pop('auto_refresh_nav', None)
+    if auto_refresh_info and str(auto_refresh_info['fund_id']) == str(pf.fund.pk):
+        # Force refresh regardless of checks
+        try:
+            from funds.services import fetch_fund_nav
+            fetch_fund_nav(pf.fund, fetch_history=True)
+            pf.fund.refresh_from_db()
+            messages.info(request, f"Auto-refreshed NAV: {auto_refresh_info['reason']}")
+            logger.info(f"Force auto-refreshed NAV for {pf.fund.scheme_code}")
+        except Exception as e:
+            logger.warning(f"Force auto-refresh failed for {pf.fund.scheme_code}: {e}")
+    else:
+        # Check per-fund cache to avoid too frequent refreshes
+        fund_cache_key = f'nav_check_{pf.fund.pk}'
+        last_check = request.session.get(fund_cache_key, 0)
+        current_time = int(time.time())
+        
+        # Only check if last check was more than 30 minutes ago
+        # And only fetch history if the chart needs it (check if we have enough history)
+        if current_time - last_check > 1800:  # 30 minutes = 1800 seconds
+            # Check if we have enough history for the selected period
+            from funds.models import NAVHistory
+            history_needed = {
+                '1y': 365,
+                '3y': 1095,
+                '5y': 1825,
+                'all': 0  # All available
+            }
+            
+            days_needed = history_needed.get(period, 365)
+            if days_needed > 0:
+                oldest_date = timezone.now().date() - timedelta(days=days_needed)
+                history_count = NAVHistory.objects.filter(
+                    fund=pf.fund, 
+                    date__gte=oldest_date
+                ).count()
+                
+                # Only fetch history if we have less than 80% of needed data
+                fetch_history = history_count < (days_needed * 0.8)
+            else:
+                fetch_history = False  # 'all' period doesn't need refresh
+            
+            auto_refresh_if_needed(request, pf.fund, fetch_history=fetch_history)
+            request.session[fund_cache_key] = current_time
+    
     # Fetch NAV history for chart
     from funds.models import NAVHistory
-    nav_history = NAVHistory.objects.filter(fund=pf.fund).order_by('date')[:365]
+    from datetime import datetime, timedelta
+    
+    # Get all history ordered by date
+    all_history = NAVHistory.objects.filter(fund=pf.fund).order_by('date')
+    
+    # Calculate available periods based on data
+    oldest_date = all_history.first().date if all_history.exists() else None
+    newest_date = all_history.last().date if all_history.exists() else None
+    
+    available_periods = []
+    if oldest_date:
+        days_available = (newest_date - oldest_date).days
+        
+        # Check which periods are available
+        if days_available >= 365:
+            available_periods.append('1y')
+        if days_available >= 1095:  # 3 years
+            available_periods.append('3y')
+        if days_available >= 1825:  # 5 years
+            available_periods.append('5y')
+        available_periods.append('all')
+    
+    # Filter history based on selected period
+    if period == '1y' and oldest_date:
+        cutoff_date = newest_date - timedelta(days=365)
+        nav_history = all_history.filter(date__gte=cutoff_date)
+    elif period == '3y' and oldest_date:
+        cutoff_date = newest_date - timedelta(days=1095)
+        nav_history = all_history.filter(date__gte=cutoff_date)
+    elif period == '5y' and oldest_date:
+        cutoff_date = newest_date - timedelta(days=1825)
+        nav_history = all_history.filter(date__gte=cutoff_date)
+    else:  # 'all' or any other value
+        nav_history = all_history
 
     # Get factsheet diff
     from factsheets.models import FactsheetDiff, Factsheet
@@ -137,6 +267,10 @@ def fund_detail(request, pf_id):
         'xirr': xirr_val,
         'latest_factsheet': latest_factsheet,
         'latest_diff': latest_diff,
+        'period': period,
+        'available_periods': available_periods,
+        'oldest_date': oldest_date,
+        'newest_date': newest_date,
     })
 
 
@@ -164,6 +298,7 @@ def add_fund(request):
             
             # Auto-fetch NAV + history when fund is first added
             try:
+                from funds.services import fetch_fund_nav
                 fetch_fund_nav(fund, fetch_history=True)
                 messages.success(request, f'Added {fund.scheme_name} to your portfolio. NAV fetched.')
             except Exception as e:
@@ -188,6 +323,10 @@ def add_fund(request):
 def edit_fund(request, pf_id):
     portfolio = get_object_or_404(Portfolio, user=request.user)
     pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
+    
+    # Auto-refresh NAV if needed
+    from .utils import auto_refresh_if_needed
+    auto_refresh_if_needed(request, pf.fund)
     
     if request.method == 'POST':
         # Check if delete action is requested
@@ -256,6 +395,10 @@ def edit_fund(request, pf_id):
 def add_lot(request, pf_id):
     portfolio = get_object_or_404(Portfolio, user=request.user)
     pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
+    
+    # Auto-refresh NAV if needed
+    from .utils import auto_refresh_if_needed
+    auto_refresh_if_needed(request, pf.fund)
 
     if request.method == 'POST':
         try:
@@ -320,6 +463,10 @@ def remove_fund(request, pf_id):
 def refresh_nav(request, pf_id):
     portfolio = get_object_or_404(Portfolio, user=request.user)
     pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
+    
+    # Clear auto-refresh cache for this fund
+    request.session.pop(f'nav_check_{pf.fund.pk}', None)
+    
     try:
         # Always fetch history when manually refreshing individual fund
         fetch_fund_nav(pf.fund, fetch_history=True)
@@ -344,6 +491,9 @@ def refresh_nav(request, pf_id):
 @require_POST
 def refresh_all_nav(request):
     """Refresh NAV for all funds in user's portfolio using bulk API."""
+    # Clear auto-refresh cache when manually refreshing
+    request.session.pop('last_nav_auto_check', None)
+    
     from funds.services import refresh_all_nav_bulk
     
     logger.info(f"User {request.user.username} requested bulk NAV refresh")
