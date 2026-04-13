@@ -4,6 +4,7 @@ from django.core.management import call_command
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
+from django.core.wsgi import get_wsgi_application
 
 # Add the project directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -17,8 +18,8 @@ django.setup()
 
 @csrf_exempt
 @require_POST
-def run_migrations(request):
-    """Run Django migrations"""
+def handler(request):
+    """Run Django migrations - Vercel serverless function handler"""
     try:
         # Run migrations
         call_command('migrate', '--noinput')
@@ -32,3 +33,6 @@ def run_migrations(request):
             'status': 'error',
             'message': str(e)
         }, status=500)
+
+# Also support the WSGI application
+app = get_wsgi_application()
