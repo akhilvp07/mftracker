@@ -89,13 +89,78 @@
     <table class="table mft-table mb-0">
       <thead>
         <tr>
-          <th>Fund</th>
-          <th class="text-end">NAV</th>
-          <th class="text-end">Units</th>
-          <th class="text-end">Invested</th>
-          <th class="text-end">Current</th>
-          <th class="text-end">Gain/Loss</th>
-          <th class="text-end">XIRR</th>
+          <th>
+            <a href="?sort=fund_name&order={% if current_sort == 'fund_name' and current_order == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header {% if current_sort == 'fund_name' %}active{% endif %}">
+              Fund
+              {% if current_sort == 'fund_name' %}
+                <i class="bi bi-sort-{% if current_order == 'asc' %}down{% else %}up{% endif %} ms-1"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="text-end">
+            <a href="?sort=nav&order={% if current_sort == 'nav' and current_order == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header {% if current_sort == 'nav' %}active{% endif %}">
+              NAV
+              {% if current_sort == 'nav' %}
+                <i class="bi bi-sort-{% if current_order == 'asc' %}down{% else %}up{% endif %} ms-1"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="text-end">
+            <a href="?sort=day_change&order={% if current_sort == 'day_change' and current_order == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header {% if current_sort == 'day_change' %}active{% endif %}">
+              Day Change
+              {% if current_sort == 'day_change' %}
+                <i class="bi bi-sort-{% if current_order == 'asc' %}down{% else %}up{% endif %} ms-1"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="text-end">
+            <a href="?sort=units&order={% if current_sort == 'units' and current_order == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header {% if current_sort == 'units' %}active{% endif %}">
+              Units
+              {% if current_sort == 'units' %}
+                <i class="bi bi-sort-{% if current_order == 'asc' %}down{% else %}up{% endif %} ms-1"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="text-end">
+            <a href="?sort=invested&order={% if current_sort == 'invested' and current_order == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header {% if current_sort == 'invested' %}active{% endif %}">
+              Invested
+              {% if current_sort == 'invested' %}
+                <i class="bi bi-sort-{% if current_order == 'asc' %}down{% else %}up{% endif %} ms-1"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="text-end">
+            <a href="?sort=current&order={% if current_sort == 'current' and current_order == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header {% if current_sort == 'current' %}active{% endif %}">
+              Current
+              {% if current_sort == 'current' %}
+                <i class="bi bi-sort-{% if current_order == 'asc' %}down{% else %}up{% endif %} ms-1"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="text-end">
+            <a href="?sort=gain_pct&order={% if current_sort == 'gain_pct' and current_order == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header {% if current_sort == 'gain_pct' %}active{% endif %}">
+              Gain/Loss %
+              {% if current_sort == 'gain_pct' %}
+                <i class="bi bi-sort-{% if current_order == 'asc' %}down{% else %}up{% endif %} ms-1"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="text-end">
+            <a href="?sort=xirr&order={% if current_sort == 'xirr' and current_order == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header {% if current_sort == 'xirr' %}active{% endif %}">
+              XIRR
+              {% if current_sort == 'xirr' %}
+                <i class="bi bi-sort-{% if current_order == 'asc' %}down{% else %}up{% endif %} ms-1"></i>
+              {% endif %}
+            </a>
+          </th>
           <th class="text-center">Actions</th>
         </tr>
       </thead>
@@ -117,6 +182,15 @@
               {% if item.pf.fund.nav_date %}
               <div class="nav-date">{{ item.pf.fund.nav_date }}</div>
               {% endif %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end font-mono">
+            {% if item.pf.fund.day_change_pct is not None %}
+              <span class="{% if item.pf.fund.day_change_pct > 0 %}text-gain{% elif item.pf.fund.day_change_pct < 0 %}text-loss{% else %}text-muted{% endif %}">
+                {% if item.pf.fund.day_change_pct > 0 %}+{% endif %}{{ item.pf.fund.day_change_pct|floatformat:2 }}%
+              </span>
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}
@@ -213,4 +287,28 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 </script>
+
+<style>
+.sortable-header {
+  color: inherit;
+  text-decoration: none;
+  display: inline-block;
+  transition: color 0.2s;
+}
+
+.sortable-header:hover {
+  color: var(--mft-primary);
+  text-decoration: none;
+}
+
+.sortable-header.active {
+  color: var(--mft-primary);
+  font-weight: 600;
+}
+
+.sortable-header i {
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+</style>
 {% endblock %}

@@ -1,8 +1,10 @@
 {% extends "base/base.html" %}
 {% load humanize %}
 {% load indian_currency %}
-{% load groww_tags %}
 {% block title %}Factsheet · {{ fund.scheme_name|truncatechars:30 }}{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
 {% block content %}
 
 <div class="page-header mb-4">
@@ -83,131 +85,331 @@
 </div>
 {% endif %}
 
-{% for fs in factsheets %}
-<div class="mft-card mb-3">
+<!-- Live Holdings from mfdata.in -->
+{% if mfdata_holdings or mfdata_sectors %}
+<div class="mft-card mb-4">
   <div class="mft-card-header">
-    <h5 class="mft-card-title">{{ fs.month|date:"F Y" }}</h5>
-    <div class="d-flex gap-2 align-items-center">
-      {% if fs.fetch_error and not fs.fund_manager and not fs.holdings.all %}
-        <span class="status-chip status-err"><i class="bi bi-x-circle me-1"></i>Fetch failed</span>
-      {% elif fs.holdings.all %}
-        <span class="status-chip status-ok"><i class="bi bi-check-circle me-1"></i>{{ fs.holdings.count }} holdings</span>
-      {% elif fs.fund_manager or fs.category %}
-        <span class="status-chip status-warn"><i class="bi bi-clock me-1"></i>Partial — no holdings yet</span>
-      {% else %}
-        <span class="status-chip status-neutral"><i class="bi bi-dash me-1"></i>No data</span>
+    <h5 class="mft-card-title"><i class="bi bi-briefcase me-2"></i>Portfolio Holdings</h5>
+    {% if mfdata_holdings.month %}
+    <span class="mft-badge">{{ mfdata_holdings.month }}</span>
+    {% endif %}
+  </div>
+  <div class="p-3">
+    <div class="row g-4">
+      <!-- Asset Allocation (from holdings data) -->
+      {% if mfdata_holdings %}
+      <div class="col-md-4">
+        <div class="fs-section-title mb-2">Asset Allocation</div>
+        <div style="height: 250px; position: relative;">
+          <canvas id="assetChart"></canvas>
+        </div>
+        <div class="mt-2">
+          {% if mfdata_holdings.equity_pct %}
+          <div class="d-flex justify-content-between align-items-center py-1" style="font-size: 0.75rem;">
+            <span>Equity</span>
+            <span class="font-mono fw-bold">{{ mfdata_holdings.equity_pct|floatformat:1 }}%</span>
+          </div>
+          {% endif %}
+          {% if mfdata_holdings.debt_pct %}
+          <div class="d-flex justify-content-between align-items-center py-1" style="font-size: 0.75rem;">
+            <span>Debt</span>
+            <span class="font-mono fw-bold">{{ mfdata_holdings.debt_pct|floatformat:1 }}%</span>
+          </div>
+          {% endif %}
+          {% if mfdata_holdings.other_pct and mfdata_holdings.other_pct > 0 %}
+          <div class="d-flex justify-content-between align-items-center py-1" style="font-size: 0.75rem;">
+            <span>Other</span>
+            <span class="font-mono fw-bold">{{ mfdata_holdings.other_pct|floatformat:1 }}%</span>
+          </div>
+          {% endif %}
+        </div>
+        {% if mfdata_holdings.month %}
+        <div class="text-muted small mt-2">As of {{ mfdata_holdings.month }}</div>
+        {% endif %}
+      </div>
       {% endif %}
-      <span class="text-muted small">{{ fs.fetched_at|date:"d M H:i" }}</span>
+      
+      <!-- Sector Allocation -->
+      {% if mfdata_sectors %}
+      <div class="col-md-4">
+        <div class="fs-section-title mb-2">Sector Allocation</div>
+        <div style="height: 250px; position: relative;">
+          <canvas id="sectorChart"></canvas>
+        </div>
+        <div class="mt-2">
+          {% for sector in mfdata_sectors|slice:":5" %}
+          <div class="d-flex justify-content-between align-items-center py-1" style="font-size: 0.75rem;">
+            <span>{{ sector.sector|truncatechars:18 }}</span>
+            <span class="font-mono fw-bold">{{ sector.total_weight|floatformat:1 }}%</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      
+      <!-- Top Holdings -->
+      {% if mfdata_holdings and mfdata_holdings.equity_holdings %}
+      <div class="col-md-4">
+        <div class="fs-section-title mb-2">Top Holdings</div>
+        <div class="holdings-list">
+          {% for holding in mfdata_holdings.equity_holdings|slice:":8" %}
+          <div class="d-flex justify-content-between align-items-center py-1 border-bottom" style="border-color: var(--border-color) !important;">
+            <div>
+              <span class="small">{{ holding.stock_name|truncatechars:22 }}</span>
+              {% if holding.sector %}<br><span class="text-muted" style="font-size: 0.7rem;">{{ holding.sector }}</span>{% endif %}
+            </div>
+            <div class="text-end">
+              <span class="font-mono small fw-bold">{{ holding.weight_pct|floatformat:2 }}%</span>
+              {% if holding.month_change_pct %}
+              <br><span class="{% if holding.month_change_pct > 0 %}text-gain{% else %}text-loss{% endif %}" style="font-size: 0.7rem;">
+                {% if holding.month_change_pct > 0 %}+{% endif %}{{ holding.month_change_pct|floatformat:2 }}%
+              </span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    
+    <!-- Full Holdings Table -->
+    {% if mfdata_holdings and mfdata_holdings.equity_holdings %}
+    <div class="mt-4">
+      <div class="fs-section-title mb-2">All Equity Holdings ({{ mfdata_holdings.equity_holdings|length }})</div>
+      <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+        <table class="table table-sm mft-table mb-0">
+          <thead style="position: sticky; top: 0; background: var(--card-bg);">
+            <tr>
+              <th>Stock</th>
+              <th>Sector</th>
+              <th class="text-end">Weight</th>
+              <th class="text-end">MoM Change</th>
+              <th class="text-end">Value (Cr)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for holding in mfdata_holdings.equity_holdings %}
+            <tr>
+              <td>{{ holding.stock_name }}</td>
+              <td class="text-muted small">{{ holding.sector|default:"—" }}</td>
+              <td class="text-end font-mono">{{ holding.weight_pct|floatformat:2 }}%</td>
+              <td class="text-end font-mono {% if holding.month_change_pct > 0 %}text-gain{% elif holding.month_change_pct < 0 %}text-loss{% endif %}">
+                {% if holding.month_change_pct %}{% if holding.month_change_pct > 0 %}+{% endif %}{{ holding.month_change_pct|floatformat:2 }}%{% else %}—{% endif %}
+              </td>
+              <td class="text-end font-mono">{% if holding.market_value %}₹{{ holding.market_value|floatformat:0 }}{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    
+    <div class="text-muted small mt-3">
+      <i class="bi bi-info-circle me-1"></i>Data from mfdata.in API
     </div>
   </div>
-
-  <div class="p-3">
-
-    {# ── Partial/soft error notice ── #}
-    {% if fs.fetch_error %}
-    <div class="diff-alert {% if fs.fund_manager %}diff-warning{% else %}diff-critical{% endif %} mb-3">
-      <i class="bi bi-info-circle me-2"></i>
-      {% if fs.fund_manager %}
-        <strong>Partial data:</strong>
-      {% else %}
-        <strong>Could not fetch data:</strong>
-      {% endif %}
-      {{ fs.fetch_error }}
-      <span class="text-muted ms-2 small">— Click <em>Refresh Factsheet</em> to retry.</span>
-    </div>
-    {% endif %}
-
-    {# ── Groww link ── #}
-    <div class="factsheet-notice mb-3">
-      <i class="bi bi-box-arrow-up-right text-muted"></i>
-      <div>
-        <strong>View on Groww</strong><br>
-        <a href="{{ fund|groww_url }}" target="_blank" class="text-secondary">
-          See detailed portfolio holdings on Groww →
-        </a>
-      </div>
-    </div>
-
-    <div class="row g-3">
-
-      {# ── Fund Info column ── #}
-      <div class="col-md-5">
-        <div class="fs-section-title mb-2">Fund Info</div>
-
-        {% if fund.amc %}
-        <div class="settings-info-row">
-          <span class="label">AMC</span>
-          <strong>{{ fund.amc }}</strong>
-        </div>
-        {% endif %}
-
-        {% if fs.fund_manager %}
-        <div class="settings-info-row">
-          <span class="label">Fund Manager</span>
-          <strong>{{ fs.fund_manager }}</strong>
-        </div>
-        {% else %}
-        <div class="settings-info-row">
-          <span class="label">Fund Manager</span>
-          <span class="text-muted fst-italic">Not available from mfapi/AMFI</span>
-        </div>
-        {% endif %}
-
-        <div class="settings-info-row">
-          <span class="label">Category</span>
-          <strong>{{ fs.category|default:fund.category|default:"—" }}</strong>
-        </div>
-
-        {% if fund.fund_type %}
-        <div class="settings-info-row">
-          <span class="label">Type</span>
-          <strong>{{ fund.fund_type }}</strong>
-        </div>
-        {% endif %}
-
-        {% if fund.current_nav %}
-        <div class="settings-info-row">
-          <span class="label">Latest NAV</span>
-          <strong class="font-mono">
-            ₹{{ fund.current_nav|floatformat:4 }}
-            {% if fund.nav_date %}<small class="text-muted fw-normal d-block">{{ fund.nav_date }}</small>{% endif %}
-          </strong>
-        </div>
-        {% endif %}
-
-        {% if fs.aum %}
-        <div class="settings-info-row">
-          <span class="label">AUM</span>
-          <strong>₹{{ fs.aum|indian_currency }} Cr</strong>
-        </div>
-        {% endif %}
-
-        {% if fs.expense_ratio %}
-        <div class="settings-info-row">
-          <span class="label">Expense Ratio</span>
-          <strong>{{ fs.expense_ratio|floatformat:2 }}%</strong>
-        </div>
-        {% endif %}
-      </div>
-
-    </div>{# end row #}
-
-    {% if fs.objective %}
-    <div class="mt-3 factsheet-objective">
-      <strong class="text-muted small text-uppercase d-block mb-1">Objective</strong>
-      {{ fs.objective }}
-    </div>
-    {% endif %}
-
-  </div>{# end p-3 #}
 </div>
-{% empty %}
+{% endif %}
+
+<!-- Fund Info Card -->
+<div class="mft-card mb-4">
+  <div class="mft-card-header">
+    <h5 class="mft-card-title"><i class="bi bi-info-circle me-2"></i>Fund Information</h5>
+  </div>
+  <div class="p-3">
+    <div class="row">
+      {% if fund.amc %}
+      <div class="col-md-4 mb-3">
+        <span class="text-muted small d-block">AMC</span>
+        <strong>{{ fund.amc }}</strong>
+      </div>
+      {% endif %}
+      
+      {% if fund.category %}
+      <div class="col-md-4 mb-3">
+        <span class="text-muted small d-block">Category</span>
+        <strong>{{ fund.category }}</strong>
+      </div>
+      {% endif %}
+      
+      {% if fund.fund_type %}
+      <div class="col-md-4 mb-3">
+        <span class="text-muted small d-block">Type</span>
+        <strong>{{ fund.fund_type }}</strong>
+      </div>
+      {% endif %}
+      
+      {% if fund.current_nav %}
+      <div class="col-md-4 mb-3">
+        <span class="text-muted small d-block">Latest NAV</span>
+        <strong class="font-mono">₹{{ fund.current_nav|floatformat:4 }}</strong>
+        {% if fund.nav_date %}<small class="text-muted d-block">{{ fund.nav_date }}</small>{% endif %}
+      </div>
+      {% endif %}
+      
+      {% if fund.aum %}
+      <div class="col-md-4 mb-3">
+        <span class="text-muted small d-block">AUM</span>
+        <strong>₹{{ fund.aum|floatformat:0 }} Cr</strong>
+      </div>
+      {% endif %}
+      
+      {% if fund.expense_ratio %}
+      <div class="col-md-4 mb-3">
+        <span class="text-muted small d-block">Expense Ratio</span>
+        <strong>{{ fund.expense_ratio|floatformat:2 }}%</strong>
+      </div>
+      {% endif %}
+      
+      {% if fund.morningstar_rating %}
+      <div class="col-md-4 mb-3">
+        <span class="text-muted small d-block">Morningstar Rating</span>
+        <strong>
+          {% for i in "12345"|make_list %}{% if forloop.counter <= fund.morningstar_rating %}<i class="bi bi-star-fill text-warning"></i>{% else %}<i class="bi bi-star text-muted"></i>{% endif %}{% endfor %}
+        </strong>
+      </div>
+      {% endif %}
+      
+      {% if fund.start_date %}
+      <div class="col-md-4 mb-3">
+        <span class="text-muted small d-block">Launch Date</span>
+        <strong>{{ fund.start_date|date:"d M Y" }}</strong>
+      </div>
+      {% endif %}
+      
+      {% if fund.exit_load %}
+      <div class="col-md-8 mb-3">
+        <span class="text-muted small d-block">Exit Load</span>
+        <strong>{{ fund.exit_load }}</strong>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if not mfdata_holdings and not mfdata_sectors %}
 <div class="empty-state mt-4">
   <div class="empty-icon"><i class="bi bi-file-earmark-x"></i></div>
-  <h5>No factsheet data yet</h5>
-  <p class="text-secondary">Click <strong>Refresh Factsheet</strong> above to fetch fund details from Captnemo API.</p>
+  <h5>No portfolio data available</h5>
+  <p class="text-secondary">Portfolio holdings data is not available for this fund.</p>
 </div>
-{% endfor %}
+{% endif %}
+
+{% if mfdata_sectors %}
+{{ mfdata_sectors|slice:":8"|json_script:"sectors" }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('sectorChart').getContext('2d');
+    
+    // Get sectors data from JSON script
+    const sectorsElement = document.getElementById('sectors');
+    if (sectorsElement) {
+        const sectors = JSON.parse(sectorsElement.textContent);
+        
+        const labels = sectors.map(s => s.sector);
+        const data = sectors.map(s => s.total_weight);
+        
+        // Generate colors
+        const colors = [
+            '#4361ee', '#3f37c9', '#4895ef', '#4cc9f0',
+            '#7209b7', '#560bad', '#480ca8', '#3a0ca3',
+            '#3f37c9', '#4361ee', '#4895ef', '#4cc9f0'
+        ];
+        
+        new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors.slice(0, data.length),
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.label + ': ' + context.parsed.toFixed(1) + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+});
+</script>
+{% endif %}
+
+{% if mfdata_holdings %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('assetChart').getContext('2d');
+    
+    // Prepare asset allocation data
+    const assetData = {
+        labels: [],
+        data: [],
+        colors: []
+    };
+    
+    {% if mfdata_holdings.equity_pct %}
+    assetData.labels.push('Equity');
+    assetData.data.push({{ mfdata_holdings.equity_pct }});
+    assetData.colors.push('#4361ee');
+    {% endif %}
+    
+    {% if mfdata_holdings.debt_pct %}
+    assetData.labels.push('Debt');
+    assetData.data.push({{ mfdata_holdings.debt_pct }});
+    assetData.colors.push('#06ffa5');
+    {% endif %}
+    
+    {% if mfdata_holdings.other_pct and mfdata_holdings.other_pct > 0 %}
+    assetData.labels.push('Other');
+    assetData.data.push({{ mfdata_holdings.other_pct }});
+    assetData.colors.push('#7209b7');
+    {% endif %}
+    
+    new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: assetData.labels,
+            datasets: [{
+                data: assetData.data,
+                backgroundColor: assetData.colors,
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + context.parsed.toFixed(1) + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endif %}
 
 {% endblock %}
 

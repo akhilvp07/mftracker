@@ -1,3 +1,42 @@
-# Don't ignore static files
-!public/
+# Exclude Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Exclude development files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Exclude large media files but keep CAS PDFs for uploads
+media/*.zip
+media/*.tar.gz
+media/*.csv
+media/*.xlsx
+media/*.xls
+
+# Keep essential static files
 !static/
+!media/cas/

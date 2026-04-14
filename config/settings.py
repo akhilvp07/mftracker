@@ -34,6 +34,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'portfolio.middleware.AutoRefreshNavMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -67,6 +68,14 @@ DATABASES = {
         conn_health_checks=True
     )
 }
+
+# SQLite optimizations for concurrent access
+if 'sqlite' in DATABASES['default']['ENGINE']:
+    DATABASES['default']['OPTIONS'] = {
+        'timeout': 30,  # Wait longer for locked database
+        'check_same_thread': False,
+        'isolation_level': None,  # Autocommit mode
+    }
 
 # Optimize database for faster queries
 if not DEBUG:
@@ -143,6 +152,14 @@ FACTSHEET_REFRESH_DAY = int(os.environ.get('FACTSHEET_REFRESH_DAY', '1'))
 FACTSHEET_REFRESH_HOUR = int(os.environ.get('FACTSHEET_REFRESH_HOUR', '2'))
 NAV_REFRESH_HOUR = int(os.environ.get('NAV_REFRESH_HOUR', '0'))  # 12 AM (midnight)
 CRON_SECRET = os.environ.get('CRON_SECRET', 'your-secret-key-here')
+
+# Auto-refresh settings
+AUTO_REFRESH_ENABLED = os.environ.get('AUTO_REFRESH_ENABLED', 'True').lower() == 'true'
+AUTO_REFRESH_BUSINESS_HOURS_ONLY = os.environ.get('AUTO_REFRESH_BUSINESS_HOURS_ONLY', 'True').lower() == 'true'
+
+# Intelligent monitoring settings
+INTELLIGENT_MONITORING_ENABLED = os.environ.get('INTELLIGENT_MONITORING_ENABLED', 'True').lower() == 'true'
+BACKGROUND_MONITORING = os.environ.get('BACKGROUND_MONITORING', 'True').lower() == 'true'
 
 # Logging configuration - console only for serverless
 LOGGING = {
