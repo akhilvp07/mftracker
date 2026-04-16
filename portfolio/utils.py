@@ -61,8 +61,11 @@ def should_refresh_nav(fund, check_history=False):
     Check if NAV data should be refreshed based on:
     1. No current NAV
     2. NAV date is missing
-    3. NAV is older than expected considering market holidays
+    3. NAV is stale considering weekends and market hours
     """
+    # Import the helper function to use consistent logic
+    from funds.services import is_nav_data_stale
+    
     # Check if current NAV exists
     if not fund.current_nav:
         return True, "No NAV data available"
@@ -71,23 +74,25 @@ def should_refresh_nav(fund, check_history=False):
     if not fund.nav_date:
         return True, "NAV date is missing"
     
-    current_time = timezone.now().time()
     current_date = timezone.now().date()
-    current_weekday = current_date.weekday()  # 0=Monday, 6=Sunday
     
-    # Get the latest expected business day
-    expected_nav_date = get_latest_business_day(current_date)
-    
-    # NAV updates typically happen after market hours (7-9 PM)
-    # If it's past 8 PM on a weekday, we might expect today's NAV
-    if current_weekday <= 4 and current_time.hour >= 20:  # Weekday and past 8 PM
-        # Check if today is not a weekend
-        if current_weekday < 5:  # Monday-Friday
-            # Today's NAV might be available after 8 PM
-            expected_nav_date = current_date
-    
-    # Check if NAV is older than expected
-    if fund.nav_date < expected_nav_date:
+    # Check if NAV is stale using the same logic as bulk refresh
+    if is_nav_data_stale(fund.nav_date, current_date):
+        # For more specific messaging, calculate expected date
+        current_time = timezone.now().time()
+        current_weekday = current_date.weekday()  # 0=Monday, 6=Sunday
+        
+        # Get the latest expected business day
+        expected_nav_date = get_latest_business_day(current_date)
+        
+        # NAV updates typically happen after market hours (7-9 PM)
+        # If it's past 8 PM on a weekday, we might expect today's NAV
+        if current_weekday <= 4 and current_time.hour >= 20:  # Weekday and past 8 PM
+            # Check if today is not a weekend
+            if current_weekday < 5:  # Monday-Friday
+                # Today's NAV might be available after 8 PM
+                expected_nav_date = current_date
+        
         return True, f"NAV is outdated (from {fund.nav_date}, expected from {expected_nav_date})"
     
     # Only check history if explicitly requested (e.g., for charts)
@@ -99,7 +104,7 @@ def should_refresh_nav(fund, check_history=False):
         
         # For history, we don't need daily updates - weekly is fine
         latest_history = NAVHistory.objects.filter(fund=fund).order_by('-date').first()
-        if latest_history and latest_history.date < expected_nav_date - timedelta(days=7):
+        if latest_history and latest_history.date < current_date - timedelta(days=7):
             return True, f"NAV history needs update (latest from {latest_history.date})"
     
     return False, "NAV data is current"
