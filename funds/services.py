@@ -182,9 +182,32 @@ def _try_mfdata(fund, fetch_history):
         
         if 'day_change' in nav_data and nav_data['day_change'] is not None:
             fund.day_change = Decimal(str(nav_data['day_change']))
+        elif nav_date_str and fund.current_nav:
+            # Calculate day change from NAV history if not provided by API
+            from funds.models import NAVHistory
+            nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+            # Get most recent previous NAV (handles weekends/holidays)
+            prev_nav = NAVHistory.objects.filter(
+                fund=fund, 
+                date__lt=nav_date
+            ).order_by('-date').first()
+            if prev_nav and prev_nav.nav:
+                fund.day_change = fund.current_nav - prev_nav.nav
         
         if 'day_change_pct' in nav_data and nav_data['day_change_pct'] is not None:
             fund.day_change_pct = Decimal(str(nav_data['day_change_pct']))
+        elif fund.day_change and fund.current_nav:
+            # Calculate percentage if we have the change value
+            # Find previous NAV for percentage calculation
+            from funds.models import NAVHistory
+            nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+            # Get most recent previous NAV (handles weekends/holidays)
+            prev_nav = NAVHistory.objects.filter(
+                fund=fund, 
+                date__lt=nav_date
+            ).order_by('-date').first()
+            if prev_nav and prev_nav.nav > 0:
+                fund.day_change_pct = (fund.day_change / prev_nav.nav) * 100
         
         if 'morningstar' in nav_data and nav_data['morningstar'] is not None:
             fund.morningstar_rating = nav_data['morningstar']
@@ -274,6 +297,13 @@ def _try_mfapi(fund, fetch_history):
             fund.current_nav = nav_val
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
+            
+            # Calculate day change if not already set
+            if not fund.day_change and old_nav:
+                fund.day_change = nav_val - old_nav
+                if old_nav > 0:
+                    fund.day_change_pct = (fund.day_change / old_nav) * 100
+            
             fund.save()
             
             logger.info(f"Updated {fund.scheme_name} from mfapi.in: NAV {old_nav} → {nav_val}, Date {nav_date}")
