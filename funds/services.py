@@ -112,11 +112,28 @@ def _try_mfdata(fund, fetch_history):
     nav_data = fetch_from_mfdata(fund.scheme_code, skip_cache=skip_cache)
     
     if nav_data:
+        # Parse NAV date first
+        nav_date_str = nav_data.get('nav_date')
+        if nav_date_str:
+            try:
+                nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+                
+                # IMPORTANT: Check if existing data is newer
+                if fund.nav_date and nav_date < fund.nav_date:
+                    logger.warning(f"Skipping {fund.scheme_name}: mfdata.in data ({nav_date}) is older than existing ({fund.nav_date})")
+                    return True  # Return success to prevent trying other APIs
+            except ValueError:
+                logger.warning(f"Invalid date format for {fund.scheme_name}: {nav_date_str}")
+        
         # Update fund with rich data from mfdata.in
         from decimal import Decimal
+        old_nav = fund.current_nav
         fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
-        fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
+        if nav_date_str:
+            fund.nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
         fund.nav_last_updated = timezone.now()
+        
+        logger.info(f"Updated {fund.scheme_name} from mfdata.in: NAV {old_nav} → {fund.current_nav}, Date {fund.nav_date}")
         
         # Update additional fields
         if 'expense_ratio' in nav_data and nav_data['expense_ratio']:
@@ -210,10 +227,18 @@ def _try_mfapi(fund, fetch_history):
             else:
                 nav_date = date.today()
             
+            # IMPORTANT: Check if existing data is newer
+            if fund.nav_date and nav_date < fund.nav_date:
+                logger.warning(f"Skipping {fund.scheme_name}: mfapi.in data ({nav_date}) is older than existing ({fund.nav_date})")
+                return True  # Return success to prevent trying other APIs
+            
+            old_nav = fund.current_nav
             fund.current_nav = nav_val
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
             fund.save()
+            
+            logger.info(f"Updated {fund.scheme_name} from mfapi.in: NAV {old_nav} → {nav_val}, Date {nav_date}")
             
             # Trigger intelligent monitoring for NAV changes
             try:
