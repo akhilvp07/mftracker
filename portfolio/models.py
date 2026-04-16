@@ -101,6 +101,13 @@ class PortfolioFund(models.Model):
         return self.total_units * self.average_nav
     
     @property
+    def fifo_average_nav(self):
+        """Calculate average NAV using FIFO cost basis"""
+        if self.total_units > 0 and self.total_cost_basis:
+            return self.total_cost_basis / self.total_units
+        return decimal.Decimal('0')
+    
+    @property
     def total_cost_basis(self):
         """Traditional cost basis using FIFO method"""
         try:
@@ -111,10 +118,10 @@ class PortfolioFund(models.Model):
             
             for lot in lots:
                 if lot.units > 0:
-                    # Purchase - add to queue
+                    # Purchase - add to queue with NAV rounded to 2 decimals
                     purchase_queue.append({
                         'units': lot.units,
-                        'avg_nav': lot.avg_nav,
+                        'avg_nav': lot.avg_nav.quantize(decimal.Decimal('0.01')),
                         'purchase_date': lot.purchase_date
                     })
                 else:

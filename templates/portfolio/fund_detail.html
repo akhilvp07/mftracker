@@ -141,7 +141,7 @@
           <span class="summary-label">Invested</span>
           <span class="summary-value font-mono invested-amount" 
                 data-net-investment="₹{{ pf.net_invested|indian_currency_int }}"
-                data-cost-basis="₹{{ pf.invested_at_average_nav|indian_currency_int|default:pf.total_invested|indian_currency_int }}">
+                data-cost-basis="₹{{ pf.total_cost_basis|indian_currency_int|default:pf.total_invested|indian_currency_int }}">
             ₹{{ pf.total_invested|indian_currency_int }}
           </span>
         </div>
@@ -152,10 +152,12 @@
         <div class="summary-row average-nav-row" style="display: none;">
           <span class="summary-label">Avg NAV (Cost Basis)</span>
           <span class="summary-value font-mono">
-            <span class="avg-nav-value">₹{{ pf.average_nav|floatformat:4 }}</span>
+            <span class="avg-nav-value">₹{{ pf.fifo_average_nav|floatformat:2 }}</span>
             <span class="text-muted small ms-2">({{ pf.total_units|floatformat:4 }} units)</span>
           </span>
         </div>
+        <!-- Debug FIFO with rounded NAVs -->
+        <!-- {% for lot in lots %}{% if lot.units > 0 %}{{ lot.purchase_date }}: Original NAV={{ lot.avg_nav|floatformat:4 }}, Rounded NAV={{ lot.avg_nav|floatformat:2 }}, Units={{ lot.units|floatformat:4 }} {% endif %}{% endfor %} -->
         <div class="summary-row">
           <span class="summary-label">Abs. Return</span>
           <span class="summary-value font-mono {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">

@@ -89,8 +89,8 @@ def dashboard(request):
 
         # Calculate cost basis
         try:
-            # For cost basis view, use invested at average NAV (matches Zerodha)
-            cost_basis = pf.invested_at_average_nav or Decimal('0')
+            # For cost basis view, use FIFO cost basis
+            cost_basis = pf.total_cost_basis or Decimal('0')
             gain_cost_basis = current - cost_basis
             gain_pct_cost_basis = (gain_cost_basis / cost_basis * 100) if cost_basis > 0 else Decimal('0')
         except Exception as e:
