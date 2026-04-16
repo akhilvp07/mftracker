@@ -123,7 +123,7 @@ class CASParserService:
                 logger.info(f"Successfully processed CAS import {cas_import.id} for user {user.username}")
                 
             except IncorrectPasswordError:
-                error_msg = "Incorrect password. Please check your PAN number."
+                error_msg = "Incorrect password. Please check the password you entered."
                 logger.error(f"CAS parsing error: {error_msg}")
                 cas_import.mark_completed(success=False, error_message=error_msg)
                 
@@ -188,7 +188,7 @@ class CASParserService:
                 logger.info(f"Successfully processed CAS import {cas_import.id} for user {user.username}")
                 
             except IncorrectPasswordError:
-                error_msg = "Incorrect password. Please check your PAN number."
+                error_msg = "Incorrect password. Please check the password you entered."
                 logger.error(f"CAS parsing error: {error_msg}")
                 cas_import.mark_completed(success=False, error_message=error_msg)
                 
