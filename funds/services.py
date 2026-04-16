@@ -76,16 +76,22 @@ def fetch_fund_nav(fund, fetch_history=False):
             logger.warning(f"{api_name} failed for {fund.scheme_code}: {e}")
             continue  # Try next API
     
-    # If we used mfapi.in and history is needed, fetch it separately from mfdata.in
-    if used_api == 'mfapi.in' and fetch_history:
+    # If history is needed and mfdata.in failed or was skipped, try mfapi.in for history
+    if fetch_history and (used_api != 'mfdata.in' or not used_api):
         try:
-            logger.info(f"Fetching history separately from mfdata.in for {fund.scheme_code}")
-            from .mfdata_service import fetch_nav_history
-            history_data = fetch_nav_history(fund.scheme_code)
-            if history_data:
-                logger.info(f"Fetched {len(history_data)} history entries for {fund.scheme_name} from mfdata.in")
+            logger.info(f"Fetching history from mfapi.in for {fund.scheme_code}")
+            # Use the same endpoint as _try_mfapi but only for history
+            import time
+            timestamp = int(time.time())
+            url = f"{MFAPI_BASE}/{fund.scheme_code}?_={timestamp}"
+            raw = _fetch_with_retry(url, max_retries=3, timeout=20)
+            data = json.loads(raw)
+            
+            if data.get('data'):
+                _save_nav_history(fund, data['data'])
+                logger.info(f"Fetched {len(data['data'])} history entries for {fund.scheme_name} from mfapi.in")
         except Exception as e:
-            logger.warning(f"Failed to fetch history from mfdata.in for {fund.scheme_code}: {e}")
+            logger.warning(f"Failed to fetch history from mfapi.in for {fund.scheme_code}: {e}")
     
     if not used_api:
         logger.error(f"All APIs failed for {fund.scheme_code}")
