@@ -76,10 +76,10 @@ def fetch_fund_nav(fund, fetch_history=False):
             logger.warning(f"{api_name} failed for {fund.scheme_code}: {e}")
             continue  # Try next API
     
-    # If history is needed and mfdata.in failed or was skipped, try mfapi.in for history
-    if fetch_history and (used_api != 'mfdata.in' or not used_api):
+    # If history is needed and mfdata.in failed completely, try mfapi.in for history
+    if fetch_history and not used_api:
         try:
-            logger.info(f"Fetching history from mfapi.in for {fund.scheme_code}")
+            logger.info(f"Fetching history from mfapi.in for {fund.scheme_code} (mfdata.in failed)")
             # Use the same endpoint as _try_mfapi but only for history
             import time
             timestamp = int(time.time())
@@ -143,9 +143,21 @@ def _try_mfdata(fund, fetch_history):
                 if fund.nav_date and nav_date < fund.nav_date:
                     logger.warning(f"Skipping {fund.scheme_name}: mfdata.in data ({nav_date}) is older than existing ({fund.nav_date})")
                     
-                    # Still fetch history if requested, even if NAV is not updated
+                    # Fetch history from mfapi.in since mfdata.in has older data
                     if fetch_history:
-                        _fetch_nav_history_from_mfdata(fund)
+                        try:
+                            logger.info(f"Fetching history from mfapi.in for {fund.scheme_code} (mfdata.in has older data)")
+                            import time
+                            timestamp = int(time.time())
+                            url = f"{MFAPI_BASE}/{fund.scheme_code}?_={timestamp}"
+                            raw = _fetch_with_retry(url, max_retries=3, timeout=20)
+                            data = json.loads(raw)
+                            
+                            if data.get('data'):
+                                _save_nav_history(fund, data['data'])
+                                logger.info(f"Fetched {len(data['data'])} history entries for {fund.scheme_name} from mfapi.in")
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch history from mfapi.in for {fund.scheme_code}: {e}")
                     
                     return True  # Return success to prevent trying other APIs
             except ValueError:
