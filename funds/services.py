@@ -136,6 +136,11 @@ def _try_mfdata(fund, fetch_history):
                 # IMPORTANT: Check if existing data is newer
                 if fund.nav_date and nav_date < fund.nav_date:
                     logger.warning(f"Skipping {fund.scheme_name}: mfdata.in data ({nav_date}) is older than existing ({fund.nav_date})")
+                    
+                    # Still fetch history if requested, even if NAV is not updated
+                    if fetch_history:
+                        _fetch_nav_history_from_mfdata(fund)
+                    
                     return True  # Return success to prevent trying other APIs
             except ValueError:
                 logger.warning(f"Invalid date format for {fund.scheme_name}: {nav_date_str}")
