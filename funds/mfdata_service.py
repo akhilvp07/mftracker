@@ -333,7 +333,9 @@ def fetch_family_holdings(family_id, month=None, holding_type=None):
             holdings = data.get('data', {})
             
             # Add metadata
-            holdings['fetched_at'] = timezone.now().isoformat()
+            from django.utils import timezone as tz
+            local_time = tz.localtime(timezone.now())
+            holdings['fetched_at'] = local_time.strftime('%Y-%m-%dT%H:%M:%S')
             if month:
                 holdings['month'] = month
             
@@ -419,13 +421,15 @@ def fetch_family_sectors(family_id):
         if data.get('status') == 'success':
             sectors = data.get('data', [])
             # Add metadata
+            from django.utils import timezone as tz
+            local_time = tz.localtime(timezone.now()).strftime('%Y-%m-%dT%H:%M:%S')
             if isinstance(sectors, list):
                 # If sectors is a list, add metadata to each sector
                 for sector in sectors:
-                    sector['fetched_at'] = timezone.now().isoformat()
+                    sector['fetched_at'] = local_time
             else:
                 # If sectors is a dict, add metadata at top level
-                sectors['fetched_at'] = timezone.now().isoformat()
+                sectors['fetched_at'] = local_time
             return sectors
         return []
     except Exception as e:
