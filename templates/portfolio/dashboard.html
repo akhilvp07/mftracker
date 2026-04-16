@@ -37,12 +37,24 @@
   </div>
 </div>
 
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0">Portfolio Overview</h5>
+  <div class="investment-method-toggle">
+    <span class="toggle-label">Net Investment</span>
+    <label class="switch">
+      <input type="checkbox" id="investmentMethodSwitch">
+      <span class="slider round"></span>
+    </label>
+    <span class="toggle-label">Cost Basis</span>
+  </div>
+</div>
+
 <div class="row g-3 mb-4">
   <div class="col-6 col-lg-3">
     <div class="stat-card">
       <div class="stat-label"><i class="bi bi-wallet2 me-1"></i>Invested</div>
-      <div class="stat-value">₹{{ total_invested|indian_currency_int }}</div>
-      <div class="stat-sub">Net Investment Basis</div>
+      <div class="stat-value" data-net-investment="{{ total_invested|indian_currency_int }}" data-cost-basis="{{ total_cost_basis|indian_currency_int }}">₹{{ total_invested|indian_currency_int }}</div>
+      <div class="stat-sub investment-method-label">Net Investment Basis</div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
@@ -53,12 +65,16 @@
     </div>
   </div>
   <div class="col-6 col-lg-3">
-    <div class="stat-card {% if total_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
+    <div class="stat-card gain-loss-card {% if total_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
       <div class="stat-label"><i class="bi bi-{% if total_gain >= 0 %}arrow-up{% else %}arrow-down{% endif %}-circle me-1"></i>Gain / Loss</div>
-      <div class="stat-value {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
+      <div class="stat-value {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}"
+           data-net-investment="{% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|indian_currency_int }}"
+           data-cost-basis="{% if total_gain_cost_basis >= 0 %}+{% endif %}₹{{ total_gain_cost_basis|indian_currency_int }}">
         {% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|indian_currency_int }}
       </div>
-      <div class="stat-sub {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
+      <div class="stat-sub {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}"
+           data-net-investment="{% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%"
+           data-cost-basis="{% if total_gain_cost_basis >= 0 %}+{% endif %}{{ total_gain_pct_cost_basis|floatformat:2 }}%">
         {% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%
       </div>
     </div>
@@ -196,10 +212,16 @@
             {% endif %}
           </td>
           <td class="text-end font-mono">{{ item.pf.total_units|floatformat:4 }}</td>
-          <td class="text-end font-mono">₹{{ item.invested|indian_currency_int }}</td>
+          <td class="text-end font-mono invested-amount" 
+            data-net-investment="₹{{ item.invested|indian_currency_int }}"
+            data-cost-basis="₹{{ item.cost_basis|indian_currency_int }}">₹{{ item.invested|indian_currency_int }}</td>
           <td class="text-end font-mono">₹{{ item.current|indian_currency_int }}</td>
           <td class="text-end">
-            <span class="gain-badge {% if item.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+            <span class="gain-badge {% if item.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}"
+                  data-net-investment="{% if item.gain >= 0 %}+{% endif %}{{ item.gain_pct|floatformat:2 }}%"
+                  data-cost-basis="{% if item.gain_cost_basis >= 0 %}+{% endif %}{{ item.gain_pct_cost_basis|floatformat:2 }}%"
+                  data-net-gain-class="{% if item.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}"
+                  data-cost-gain-class="{% if item.gain_cost_basis >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
               {% if item.gain >= 0 %}+{% endif %}{{ item.gain_pct|floatformat:2 }}%
             </span>
           </td>
@@ -286,6 +308,99 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 });
+
+// Investment Method Toggle
+document.addEventListener('DOMContentLoaded', function() {
+  const switchElement = document.getElementById('investmentMethodSwitch');
+  const toggleLabels = document.querySelectorAll('.toggle-label');
+  
+  // Load saved preference
+  const savedMethod = localStorage.getItem('investmentMethod') || 'netInvestment';
+  if (savedMethod === 'costBasis') {
+    switchElement.checked = true;
+    updateDisplay('costBasis');
+    toggleLabels[0].classList.remove('active');
+    toggleLabels[1].classList.add('active');
+  } else {
+    switchElement.checked = false;
+    updateDisplay('netInvestment');
+    toggleLabels[0].classList.add('active');
+    toggleLabels[1].classList.remove('active');
+  }
+  
+  // Handle toggle
+  switchElement.addEventListener('change', function() {
+    const method = this.checked ? 'costBasis' : 'netInvestment';
+    localStorage.setItem('investmentMethod', method);
+    updateDisplay(method);
+    
+    // Update label styles
+    if (this.checked) {
+      toggleLabels[0].classList.remove('active');
+      toggleLabels[1].classList.add('active');
+    } else {
+      toggleLabels[0].classList.add('active');
+      toggleLabels[1].classList.remove('active');
+    }
+  });
+  
+  function updateDisplay(method) {
+    // Update Invested amount
+    const investedValue = document.querySelector('[data-net-investment][data-cost-basis]');
+    if (investedValue) {
+      investedValue.textContent = '₹' + investedValue.getAttribute(method === 'netInvestment' ? 'data-net-investment' : 'data-cost-basis');
+    }
+    
+    // Update Invested label
+    const investedLabel = document.querySelector('.investment-method-label');
+    if (investedLabel) {
+      investedLabel.textContent = method === 'netInvestment' ? 'Net Investment Basis' : 'Total Cost Basis';
+    }
+    
+    // Update Gain/Loss values
+    const gainValue = document.querySelector('.gain-loss-card .stat-value[data-net-investment][data-cost-basis]');
+    const gainPercent = document.querySelector('.gain-loss-card .stat-sub[data-net-investment][data-cost-basis]');
+    const gainCard = document.querySelector('.gain-loss-card');
+    
+    if (gainValue && gainPercent && gainCard) {
+      const value = gainValue.getAttribute(method === 'netInvestment' ? 'data-net-investment' : 'data-cost-basis');
+      const percent = gainPercent.getAttribute(method === 'netInvestment' ? 'data-net-investment' : 'data-cost-basis');
+      
+      gainValue.textContent = value;
+      gainPercent.textContent = percent;
+      
+      // Update card styling based on gain/loss
+      const isGain = !value.includes('-');
+      gainCard.className = 'stat-card gain-loss-card ' + (isGain ? 'stat-card-gain' : 'stat-card-loss');
+      gainValue.className = 'stat-value ' + (isGain ? 'text-gain' : 'text-loss');
+      gainPercent.className = 'stat-sub ' + (isGain ? 'text-gain' : 'text-loss');
+      
+      // Update arrow icon
+      const icon = gainCard.querySelector('.stat-label i');
+      if (icon) {
+        icon.className = 'bi bi-' + (isGain ? 'arrow-up' : 'arrow-down') + '-circle me-1';
+      }
+    }
+    
+    // Update Holdings table
+    const investedAmounts = document.querySelectorAll('.invested-amount[data-net-investment][data-cost-basis]');
+    investedAmounts.forEach(cell => {
+      cell.textContent = cell.getAttribute(method === 'netInvestment' ? 'data-net-investment' : 'data-cost-basis');
+    });
+    
+    // Update Gain/Loss percentages in holdings
+    const gainBadges = document.querySelectorAll('.gain-badge[data-net-investment][data-cost-basis]');
+    gainBadges.forEach(badge => {
+      const value = badge.getAttribute(method === 'netInvestment' ? 'data-net-investment' : 'data-cost-basis');
+      const gainClass = badge.getAttribute(method === 'netInvestment' ? 'data-net-gain-class' : 'data-cost-gain-class');
+      
+      badge.textContent = value;
+      // Remove both classes and add the correct one
+      badge.classList.remove('gain-positive', 'gain-negative');
+      badge.classList.add(gainClass);
+    });
+  }
+});
 </script>
 
 <style>
@@ -309,6 +424,106 @@ document.addEventListener('DOMContentLoaded', function() {
 .sortable-header i {
   font-size: 0.75em;
   opacity: 0.7;
+}
+
+/* Investment Method Toggle Switch */
+.investment-method-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toggle-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--bs-secondary);
+  transition: color 0.3s;
+}
+
+.toggle-label.active {
+  color: var(--mft-primary);
+  font-weight: 600;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #adb5bd;
+  transition: .4s;
+  border: 1px solid #6c757d;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+input:checked + .slider {
+  background-color: var(--mft-primary);
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px var(--mft-primary);
+}
+
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+
+.slider.round {
+  border-radius: 24px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .slider {
+    background-color: #6c757d;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  
+  .slider:before {
+    background-color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* For Bootstrap dark mode */
+[data-bs-theme="dark"] .slider {
+  background-color: #6c757d;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-bs-theme="dark"] .slider:before {
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 </style>
 {% endblock %}
