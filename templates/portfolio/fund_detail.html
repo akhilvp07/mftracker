@@ -99,6 +99,21 @@
   .toggle-label.small {
     font-size: 10px;
   }
+  
+  /* Ensure toggle is visible */
+  .basis-toggle-wrapper {
+    visibility: visible !important;
+    display: flex !important;
+  }
+  
+  .basis-toggle {
+    visibility: visible !important;
+    display: flex !important;
+  }
+  
+  .toggle-slider {
+    visibility: visible !important;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -509,7 +524,7 @@
           <td class="font-mono">{{ lot.purchase_date }}</td>
           <td class="text-end font-mono">{{ lot.units|floatformat:4 }}</td>
           <td class="text-end font-mono">₹{{ lot.avg_nav|floatformat:4 }}</td>
-          <td class="text-end font-mono">₹{{ lot.invested_amount|indian_currency_int }}</td></td>
+          <td class="text-end font-mono">₹{{ lot.invested_amount|indian_currency_int }}</td>
           <td class="text-end font-mono">
             {% if pf.fund.current_nav %}
               ₹{% widthratio lot.units 1 pf.fund.current_nav %}
@@ -607,7 +622,7 @@ const navDates = JSON.parse(document.getElementById('nav_dates').textContent);
 const navValues = JSON.parse(document.getElementById('nav_values').textContent);
 if (navDates.length && navValues.length) {
   const ctx = document.getElementById('navChart').getContext('2d');
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
   const textColor = isDark ? '#94a3b8' : '#64748b';
   new Chart(ctx, {
