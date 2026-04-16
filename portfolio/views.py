@@ -72,12 +72,26 @@ def dashboard(request):
         xirr_obj = XIRRCache.objects.filter(portfolio_fund=pf).first()
         xirr_val = float(xirr_obj.xirr_value) * 100 if xirr_obj and xirr_obj.xirr_value else None
 
+        # Calculate cost basis
+        try:
+            cost_basis = pf.total_cost_basis or Decimal('0')
+            gain_cost_basis = current - cost_basis
+            gain_pct_cost_basis = (gain_cost_basis / cost_basis * 100) if cost_basis > 0 else Decimal('0')
+        except Exception as e:
+            logger.error(f"Error calculating cost basis for fund {pf.fund.scheme_name}: {e}")
+            cost_basis = Decimal('0')
+            gain_cost_basis = Decimal('0')
+            gain_pct_cost_basis = Decimal('0')
+
         holdings_data.append({
             'pf': pf,
             'invested': invested,
+            'cost_basis': cost_basis,
             'current': current,
             'gain': gain,
             'gain_pct': gain_pct,
+            'gain_cost_basis': gain_cost_basis,
+            'gain_pct_cost_basis': gain_pct_cost_basis,
             'xirr': xirr_val,
             'nav': pf.fund.current_nav or Decimal('0'),
             'day_change_pct': pf.fund.day_change_pct or Decimal('0'),
@@ -102,10 +116,15 @@ def dashboard(request):
     
     # Calculate totals
     total_invested = sum(item['invested'] for item in holdings_data)
+    total_cost_basis = sum(item['cost_basis'] for item in holdings_data if item['cost_basis'])
     total_current = sum(item['current'] for item in holdings_data)
 
     total_gain = total_current - total_invested
     total_gain_pct = (total_gain / total_invested * 100) if total_invested > 0 else Decimal('0')
+    
+    # Calculate gains for cost basis method
+    total_gain_cost_basis = total_current - total_cost_basis
+    total_gain_pct_cost_basis = (total_gain_cost_basis / total_cost_basis * 100) if total_cost_basis > 0 else Decimal('0')
 
     portfolio_xirr_obj = XIRRCache.objects.filter(portfolio=portfolio, portfolio_fund=None).first()
     portfolio_xirr = None
@@ -132,9 +151,12 @@ def dashboard(request):
         'portfolio': portfolio,
         'holdings_data': holdings_data,
         'total_invested': total_invested,
+        'total_cost_basis': total_cost_basis,
         'total_current': total_current,
         'total_gain': total_gain,
         'total_gain_pct': total_gain_pct,
+        'total_gain_cost_basis': total_gain_cost_basis,
+        'total_gain_pct_cost_basis': total_gain_pct_cost_basis,
         'portfolio_xirr': portfolio_xirr,
         'seed_status': seed_status,
         'now': timezone.now(),

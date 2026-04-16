@@ -64,6 +64,46 @@ class PortfolioFund(models.Model):
         return sum(lot.units * lot.avg_nav for lot in self.lots.all())
 
     @property
+    def total_cost_basis(self):
+        """Traditional cost basis using FIFO method"""
+        try:
+            # Get all lots sorted by purchase_date (FIFO)
+            lots = sorted(self.lots.all(), key=lambda x: x.purchase_date)
+            purchase_queue = []  # Queue of (units, avg_nav, purchase_date)
+            total_cost = decimal.Decimal('0')
+            
+            for lot in lots:
+                if lot.units > 0:
+                    # Purchase - add to queue
+                    purchase_queue.append({
+                        'units': lot.units,
+                        'avg_nav': lot.avg_nav,
+                        'purchase_date': lot.purchase_date
+                    })
+                else:
+                    # Redemption - remove from FIFO queue
+                    units_to_remove = abs(lot.units)
+                    while units_to_remove > 0 and purchase_queue:
+                        if purchase_queue[0]['units'] <= units_to_remove:
+                            # Remove entire lot
+                            units_to_remove -= purchase_queue[0]['units']
+                            purchase_queue.pop(0)
+                        else:
+                            # Partially remove from lot
+                            purchase_queue[0]['units'] -= units_to_remove
+                            units_to_remove = 0
+            
+            # Calculate cost of remaining units
+            for lot in purchase_queue:
+                total_cost += lot['units'] * lot['avg_nav']
+            
+            # Ensure we return a valid Decimal
+            return total_cost if total_cost else decimal.Decimal('0')
+        except Exception as e:
+            # Fallback to simple sum if FIFO fails
+            return sum(lot.units * lot.avg_nav for lot in self.lots.all() if lot.units > 0) or decimal.Decimal('0')
+
+    @property
     def current_value(self):
         nav = self.fund.current_nav
         if nav:
