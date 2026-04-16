@@ -314,6 +314,8 @@ def fetch_scheme_returns(scheme_code):
 
 def fetch_family_holdings(family_id, month=None, holding_type=None):
     """Fetch portfolio holdings (equity, debt, other) for a fund family."""
+    from django.utils import timezone
+    
     try:
         url = f"{MFDATA_BASE}/families/{family_id}/holdings"
         params = []
@@ -329,6 +331,11 @@ def fetch_family_holdings(family_id, month=None, holding_type=None):
         
         if data.get('status') == 'success':
             holdings = data.get('data', {})
+            
+            # Add metadata
+            holdings['fetched_at'] = timezone.now().isoformat()
+            if month:
+                holdings['month'] = month
             
             # Check if API allocation percentages are reasonable (allow small rounding errors)
             api_total = (holdings.get('equity_pct', 0) + 
@@ -402,13 +409,24 @@ def fetch_family_holdings(family_id, month=None, holding_type=None):
 
 def fetch_family_sectors(family_id):
     """Fetch sector allocation for a fund family."""
+    from django.utils import timezone
+    
     try:
         url = f"{MFDATA_BASE}/families/{family_id}/sectors"
         response_text = _fetch_with_retry(url)
         data = json.loads(response_text)
         
         if data.get('status') == 'success':
-            return data.get('data', [])
+            sectors = data.get('data', [])
+            # Add metadata
+            if isinstance(sectors, list):
+                # If sectors is a list, add metadata to each sector
+                for sector in sectors:
+                    sector['fetched_at'] = timezone.now().isoformat()
+            else:
+                # If sectors is a dict, add metadata at top level
+                sectors['fetched_at'] = timezone.now().isoformat()
+            return sectors
         return []
     except Exception as e:
         logger.error(f"Failed to fetch sectors for family {family_id}: {e}")
