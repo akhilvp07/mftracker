@@ -139,7 +139,11 @@
       <div class="p-3">
         <div class="summary-row">
           <span class="summary-label">Invested</span>
-          <span class="summary-value font-mono">₹{{ pf.total_invested|indian_currency_int }}</span>
+          <span class="summary-value font-mono invested-amount" 
+                data-net-investment="₹{{ pf.total_invested|indian_currency_int }}"
+                data-cost-basis="₹{{ pf.total_cost_basis|indian_currency_int|default:pf.total_invested|indian_currency_int }}">
+            ₹{{ pf.total_invested|indian_currency_int }}
+          </span>
         </div>
         <div class="summary-row">
           <span class="summary-label">Current Value</span>
@@ -151,7 +155,6 @@
             {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|indian_currency_int }}
           </span>
         </div>
-        <div class="summary-divider"></div>
         <div class="summary-row">
           <span class="summary-label">Category</span>
           <span class="summary-value">{{ pf.fund.category|default:"—" }}</span>
@@ -585,5 +588,54 @@ if (navDates.length && navValues.length) {
     }
   });
 }
+
+// Sync invested amount with dashboard toggle
+// Use window.load to ensure it runs after everything else including charts
+window.addEventListener('load', function() {
+  const investedAmounts = document.querySelectorAll('.invested-amount');
+  
+  // Load saved investment basis
+  const savedMethod = localStorage.getItem('investmentMethod') || 'netInvestment';
+  let useCostBasis = savedMethod === 'costBasis';
+  
+  function updateInvestmentDisplay() {
+    // Use requestAnimationFrame to optimize DOM updates
+    requestAnimationFrame(() => {
+      investedAmounts.forEach(el => {
+        if (useCostBasis) {
+          el.textContent = el.dataset.costBasis;
+        } else {
+          el.textContent = el.dataset.netInvestment;
+        }
+      });
+    });
+  }
+  
+  // Listen for changes from dashboard
+  window.addEventListener('storage', function(e) {
+    if (e.key === 'investmentMethod') {
+      const savedMethod = localStorage.getItem('investmentMethod') || 'netInvestment';
+      useCostBasis = savedMethod === 'costBasis';
+      updateInvestmentDisplay();
+    }
+  });
+  
+  // Listen for visibility change to sync when tab becomes active
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+      // Use a delay to avoid forced reflow during tab switch
+      setTimeout(function() {
+        const savedMethod = localStorage.getItem('investmentMethod') || 'netInvestment';
+        if (savedMethod !== (useCostBasis ? 'costBasis' : 'netInvestment')) {
+          useCostBasis = savedMethod === 'costBasis';
+          updateInvestmentDisplay();
+        }
+      }, 500);
+    }
+  });
+  
+  // Initialize investment display
+  requestAnimationFrame(updateInvestmentDisplay);
+});
 </script>
 {% endblock %}
