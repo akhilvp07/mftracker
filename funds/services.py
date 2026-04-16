@@ -188,11 +188,10 @@ def _try_mfdata(fund, fetch_history):
             from datetime import timedelta
             nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
             
-            # Only calculate if history is recent (within last 7 days)
-            # This prevents calculating against stale data
+            # Check if history is recent (within 3 days)
             recent_history = NAVHistory.objects.filter(
                 fund=fund,
-                date__gte=nav_date - timedelta(days=7)
+                date__gte=nav_date - timedelta(days=3)
             ).exists()
             
             if recent_history:
@@ -203,11 +202,25 @@ def _try_mfdata(fund, fetch_history):
                 ).order_by('-date').first()
                 if prev_nav and prev_nav.nav:
                     fund.day_change = fund.current_nav - prev_nav.nav
-            elif old_nav and old_nav > 0:
-                # Fallback: use old NAV from fund record if history is stale
-                # This is less accurate but better than showing no change
-                logger.info(f"Using old NAV for day change calculation for {fund.scheme_name} (history not recent)")
-                fund.day_change = fund.current_nav - old_nav
+            else:
+                # History is stale, trigger refresh with history
+                logger.info(f"History is stale for {fund.scheme_name}, triggering NAV refresh with history")
+                
+                # Fetch fresh history
+                _fetch_nav_history_from_mfdata(fund)
+                
+                # Try to get previous NAV again after refresh
+                prev_nav = NAVHistory.objects.filter(
+                    fund=fund, 
+                    date__lt=nav_date
+                ).order_by('-date').first()
+                if prev_nav and prev_nav.nav:
+                    fund.day_change = fund.current_nav - prev_nav.nav
+                    logger.info(f"Calculated day change after history refresh for {fund.scheme_name}")
+                elif old_nav and old_nav > 0:
+                    # Final fallback: use old NAV from fund record
+                    logger.warning(f"Using old NAV as final fallback for {fund.scheme_name} (history refresh didn't help)")
+                    fund.day_change = fund.current_nav - old_nav
         
         if 'day_change_pct' in nav_data and nav_data['day_change_pct'] is not None:
             fund.day_change_pct = Decimal(str(nav_data['day_change_pct']))
@@ -218,10 +231,10 @@ def _try_mfdata(fund, fetch_history):
             from datetime import timedelta
             nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
             
-            # Only calculate if history is recent (within last 7 days)
+            # Check if history is recent (within 3 days)
             recent_history = NAVHistory.objects.filter(
                 fund=fund,
-                date__gte=nav_date - timedelta(days=7)
+                date__gte=nav_date - timedelta(days=3)
             ).exists()
             
             if recent_history:
@@ -232,9 +245,17 @@ def _try_mfdata(fund, fetch_history):
                 ).order_by('-date').first()
                 if prev_nav and prev_nav.nav > 0:
                     fund.day_change_pct = (fund.day_change / prev_nav.nav) * 100
-            elif old_nav and old_nav > 0:
-                # Fallback: use old NAV from fund record if history is stale
-                fund.day_change_pct = (fund.day_change / old_nav) * 100
+            else:
+                # History is stale, we already refreshed above, just use the updated data
+                prev_nav = NAVHistory.objects.filter(
+                    fund=fund, 
+                    date__lt=nav_date
+                ).order_by('-date').first()
+                if prev_nav and prev_nav.nav > 0:
+                    fund.day_change_pct = (fund.day_change / prev_nav.nav) * 100
+                elif old_nav and old_nav > 0:
+                    # Final fallback: use old NAV from fund record
+                    fund.day_change_pct = (fund.day_change / old_nav) * 100
         
         if 'morningstar' in nav_data and nav_data['morningstar'] is not None:
             fund.morningstar_rating = nav_data['morningstar']

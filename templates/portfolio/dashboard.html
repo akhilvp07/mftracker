@@ -66,16 +66,37 @@
   </div>
   <div class="col-6 col-lg-3">
     <div class="stat-card gain-loss-card {% if total_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
-      <div class="stat-label"><i class="bi bi-{% if total_gain >= 0 %}arrow-up{% else %}arrow-down{% endif %}-circle me-1"></i>Gain / Loss</div>
-      <div class="stat-value {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}"
-           data-net-investment="{% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|indian_currency_int }}"
-           data-cost-basis="{% if total_gain_cost_basis >= 0 %}+{% endif %}₹{{ total_gain_cost_basis|indian_currency_int }}">
-        {% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|indian_currency_int }}
+      <div class="stat-label d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-{% if total_gain >= 0 %}arrow-up{% else %}arrow-down{% endif %}-circle me-1"></i>Gain / Loss</span>
+        <div class="gain-toggle-wrapper">
+          <label class="gain-toggle">
+            <input type="checkbox" id="gainToggle" checked>
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Daily</span>
+          </label>
+        </div>
       </div>
-      <div class="stat-sub {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}"
-           data-net-investment="{% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%"
-           data-cost-basis="{% if total_gain_cost_basis >= 0 %}+{% endif %}{{ total_gain_pct_cost_basis|floatformat:2 }}%">
-        {% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%
+      <!-- Total Gains Display -->
+      <div class="gain-display" id="totalGains">
+        <div class="stat-value {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}"
+             data-net-investment="{% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|indian_currency_int }}"
+             data-cost-basis="{% if total_gain_cost_basis >= 0 %}+{% endif %}₹{{ total_gain_cost_basis|indian_currency_int }}">
+          {% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|indian_currency_int }}
+        </div>
+        <div class="stat-sub {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}"
+             data-net-investment="{% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%"
+             data-cost-basis="{% if total_gain_cost_basis >= 0 %}+{% endif %}{{ total_gain_pct_cost_basis|floatformat:2 }}%">
+          {% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%
+        </div>
+      </div>
+      <!-- Daily Gains Display -->
+      <div class="gain-display d-none" id="dailyGains">
+        <div class="stat-value {% if total_day_change_amount >= 0 %}text-gain{% else %}text-loss{% endif %}">
+          {% if total_day_change_amount >= 0 %}+{% endif %}₹{{ total_day_change_amount|indian_currency_int|default:"0" }}
+        </div>
+        <div class="stat-sub {% if total_day_change_pct >= 0 %}text-gain{% else %}text-loss{% endif %}">
+          {% if total_day_change_pct >= 0 %}+{% endif %}{{ total_day_change_pct|floatformat:2 }}%
+        </div>
       </div>
     </div>
   </div>
@@ -526,5 +547,137 @@ input:checked + .slider:before {
   background-color: white;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
+
+/* Custom Gain Toggle Switch */
+.gain-toggle-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.gain-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+}
+
+.gain-toggle input[type="checkbox"] {
+  display: none;
+}
+
+.toggle-slider {
+  position: relative;
+  width: 36px;
+  height: 18px;
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  margin-right: 6px;
+  transition: all 0.2s ease;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background-color: var(--text-muted);
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.gain-toggle input[type="checkbox"]:checked + .toggle-slider {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.gain-toggle input[type="checkbox"]:checked + .toggle-slider::before {
+  transform: translateX(18px);
+  background-color: white;
+}
+
+.toggle-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const gainToggle = document.getElementById('gainToggle');
+  const totalGains = document.getElementById('totalGains');
+  const dailyGains = document.getElementById('dailyGains');
+  
+  if (gainToggle && totalGains && dailyGains) {
+    // Load saved state from localStorage
+    const savedState = localStorage.getItem('gainToggleState');
+    if (savedState !== null) {
+      gainToggle.checked = savedState === 'daily';
+    }
+    
+    // Set initial state based on checkbox
+    function updateDisplay() {
+      if (gainToggle.checked) {
+        // Show daily gains
+        totalGains.classList.add('d-none');
+        dailyGains.classList.remove('d-none');
+        // Save state
+        localStorage.setItem('gainToggleState', 'daily');
+      } else {
+        // Show total gains
+        totalGains.classList.remove('d-none');
+        dailyGains.classList.add('d-none');
+        // Save state
+        localStorage.setItem('gainToggleState', 'total');
+      }
+    }
+    
+    // Initialize display
+    updateDisplay();
+    
+    // Handle toggle changes
+    gainToggle.addEventListener('change', updateDisplay);
+  }
+  
+  // Investment basis toggle (Net Investment/Cost Basis)
+  const investedAmounts = document.querySelectorAll('.invested-amount');
+  const investmentMethodLabel = document.querySelector('.investment-method-label');
+  
+  // Load saved investment basis
+  let useCostBasis = localStorage.getItem('investmentBasis') === 'cost';
+  
+  function updateInvestmentDisplay() {
+    investedAmounts.forEach(el => {
+      if (useCostBasis) {
+        el.textContent = el.dataset.costBasis;
+      } else {
+        el.textContent = el.dataset.netInvestment;
+      }
+    });
+    
+    if (investmentMethodLabel) {
+      investmentMethodLabel.textContent = useCostBasis ? 'Cost Basis' : 'Net Investment';
+    }
+  }
+  
+  // Add keyboard shortcut for toggling (Ctrl/Cmd + B)
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+      e.preventDefault();
+      useCostBasis = !useCostBasis;
+      localStorage.setItem('investmentBasis', useCostBasis ? 'cost' : 'net');
+      updateInvestmentDisplay();
+    }
+  });
+  
+  // Initialize investment display
+  updateInvestmentDisplay();
+});
+</script>
 {% endblock %}
