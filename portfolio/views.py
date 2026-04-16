@@ -141,21 +141,6 @@ def dashboard(request):
     # Calculate gains for cost basis method
     total_gain_cost_basis = total_current - total_cost_basis
     total_gain_pct_cost_basis = (total_gain_cost_basis / total_cost_basis * 100) if total_cost_basis > 0 else Decimal('0')
-    
-    # Calculate total daily gains/losses
-    total_day_change = Decimal('0')
-    total_day_change_pct = Decimal('0')
-    total_day_change_amount = Decimal('0')
-    
-    for item in holdings_data:
-        if item['day_change_pct'] and item['current']:
-            # Calculate daily change amount for this fund
-            daily_change_amount = (item['current'] * item['day_change_pct']) / 100
-            total_day_change_amount += daily_change_amount
-    
-    # Calculate daily change percentage based on total current value
-    if total_current > 0:
-        total_day_change_pct = (total_day_change_amount / total_current) * 100
 
     portfolio_xirr_obj = XIRRCache.objects.filter(portfolio=portfolio, portfolio_fund=None).first()
     portfolio_xirr = None
@@ -188,8 +173,6 @@ def dashboard(request):
         'total_gain_pct': total_gain_pct,
         'total_gain_cost_basis': total_gain_cost_basis,
         'total_gain_pct_cost_basis': total_gain_pct_cost_basis,
-        'total_day_change_amount': total_day_change_amount,
-        'total_day_change_pct': total_day_change_pct,
         'portfolio_xirr': portfolio_xirr,
         'seed_status': seed_status,
         'now': timezone.now(),
