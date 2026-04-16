@@ -61,19 +61,34 @@ def fetch_fund_nav(fund, fetch_history=False):
         ('AMFI', _try_amfi)
     ]
     
+    # Track which API was used
+    used_api = None
+    
     # Try each API source
     for api_name, api_func in api_sources:
         try:
             logger.info(f"Trying {api_name} for {fund.scheme_code}")
             if api_func(fund, fetch_history):
+                used_api = api_name
                 logger.info(f"Successfully fetched NAV from {api_name} for {fund.scheme_code}")
-                return  # Success, no need to try other APIs
+                break  # Success, no need to try other APIs
         except Exception as e:
             logger.warning(f"{api_name} failed for {fund.scheme_code}: {e}")
             continue  # Try next API
     
-    # If all APIs failed
-    logger.error(f"All APIs failed for {fund.scheme_code}")
+    # If we used mfapi.in and history is needed, fetch it separately from mfdata.in
+    if used_api == 'mfapi.in' and fetch_history:
+        try:
+            logger.info(f"Fetching history separately from mfdata.in for {fund.scheme_code}")
+            from .mfdata_service import fetch_nav_history
+            history_data = fetch_nav_history(fund.scheme_code)
+            if history_data:
+                logger.info(f"Fetched {len(history_data)} history entries for {fund.scheme_name} from mfdata.in")
+        except Exception as e:
+            logger.warning(f"Failed to fetch history from mfdata.in for {fund.scheme_code}: {e}")
+    
+    if not used_api:
+        logger.error(f"All APIs failed for {fund.scheme_code}")
 
 
 def _try_mfdata(fund, fetch_history):
@@ -670,7 +685,7 @@ def is_nav_data_stale(nav_date, current_date=None):
     return days_old > 1
 
 
-def _try_mfapi_fallback(fund):
+def _try_mfapi_fallback(fund, fetch_history=False):
     """Try fetching latest NAV from mfapi.in for a single fund"""
     import requests
     import json
@@ -703,6 +718,17 @@ def _try_mfapi_fallback(fund):
             fund.save()
             
             logger.info(f"Updated {fund.scheme_name} from mfapi.in: NAV {old_nav} → {fund.current_nav}, Date {fund.nav_date}")
+            
+            # mfapi.in doesn't provide history, so try to fetch history from mfdata.in if requested
+            if fetch_history:
+                try:
+                    from .mfdata_service import fetch_nav_history
+                    history_data = fetch_nav_history(fund.scheme_code)
+                    if history_data:
+                        logger.info(f"Fetched {len(history_data)} history entries for {fund.scheme_name} from mfdata.in")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch history for {fund.scheme_name}: {e}")
+            
             return True
             
     except Exception as e:
