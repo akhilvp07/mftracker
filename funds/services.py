@@ -512,9 +512,15 @@ def refresh_all_nav_bulk(user_portfolio):
                     
                     # Parse NAV date
                     nav_date_str = nav_data.get('nav_date')
+                    nav_date = None
                     if nav_date_str:
                         try:
                             nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+                            
+                            # IMPORTANT: Check if existing data is newer
+                            if pf.fund.nav_date and nav_date < pf.fund.nav_date:
+                                logger.warning(f"Skipping {pf.fund.scheme_name}: mfdata.in data ({nav_date}) is older than existing ({pf.fund.nav_date})")
+                                continue
                             
                             # Check if NAV data is stale considering weekends
                             if is_nav_data_stale(nav_date, today):
@@ -527,9 +533,10 @@ def refresh_all_nav_bulk(user_portfolio):
                     
                     # Update fund with rich data
                     from decimal import Decimal
+                    old_nav = pf.fund.current_nav
                     pf.fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
-                    if nav_date_str:
-                        pf.fund.nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+                    if nav_date:
+                        pf.fund.nav_date = nav_date
                     pf.fund.nav_last_updated = timezone.now()
                     
                     # Update all available fields from mfdata.in
@@ -654,15 +661,23 @@ def _try_mfapi_fallback(fund):
         if data.get('status') == 'SUCCESS' and data.get('data'):
             nav_info = data['data'][0]  # Latest NAV is first element
             
-            # Update fund with NAV from mfapi.in
-            fund.current_nav = Decimal(str(nav_info['nav']))
-            
             # Parse date (format: "26-10-2024")
             nav_date = datetime.strptime(nav_info['date'], '%d-%m-%Y').date()
+            
+            # IMPORTANT: Only update if the new NAV date is newer than existing
+            if fund.nav_date and nav_date <= fund.nav_date:
+                logger.warning(f"mfapi.in data for {fund.scheme_name} is older ({nav_date}) than existing ({fund.nav_date}), skipping update")
+                return False
+            
+            # Update fund with NAV from mfapi.in
+            old_nav = fund.current_nav
+            fund.current_nav = Decimal(str(nav_info['nav']))
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
             
             fund.save()
+            
+            logger.info(f"Updated {fund.scheme_name} from mfapi.in: NAV {old_nav} → {fund.current_nav}, Date {fund.nav_date}")
             return True
             
     except Exception as e:
