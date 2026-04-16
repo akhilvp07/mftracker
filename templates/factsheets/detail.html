@@ -96,7 +96,7 @@
     {% if mfdata_holdings.fetched_at %}
     <span class="mft-badge mft-badge-secondary">
       <i class="bi bi-clock me-1"></i>
-      Updated: {{ mfdata_holdings.fetched_at|slice:":10"|date:"d M Y" }}, {{ mfdata_holdings.fetched_at|slice:"11:16" }}
+      Updated: {{ mfdata_holdings.fetched_at|slice:"8:10" }} {{ mfdata_holdings.fetched_at|slice:"5:7" }} {{ mfdata_holdings.fetched_at|slice:"0:4" }}, {{ mfdata_holdings.fetched_at|slice:"11:16" }}
     </span>
     {% endif %}
   </div>
@@ -133,7 +133,7 @@
         <div class="text-muted small mt-2">As of {{ mfdata_holdings.month }}</div>
         {% endif %}
         {% if mfdata_holdings.fetched_at %}
-        <div class="text-muted small">Data fetched: {{ mfdata_holdings.fetched_at|slice:":10"|date:"d M Y" }}, {{ mfdata_holdings.fetched_at|slice:"11:19" }}</div>
+        <div class="text-muted small">Data fetched: {{ mfdata_holdings.fetched_at|slice:"8:10" }} {{ mfdata_holdings.fetched_at|slice:"5:7" }} {{ mfdata_holdings.fetched_at|slice:"0:4" }}, {{ mfdata_holdings.fetched_at|slice:"11:19" }}</div>
         {% endif %}
       </div>
       {% endif %}
