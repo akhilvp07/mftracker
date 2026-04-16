@@ -133,7 +133,12 @@ class CASParserService:
                 cas_import.mark_completed(success=False, error_message=error_msg)
                 
             except Exception as e:
-                error_msg = f"Processing failed: {str(e)}"
+                # Check for specific validation errors that indicate wrong password
+                error_str = str(e)
+                if "validation errors for PartialCASData" in error_str and "investor_info" in error_str:
+                    error_msg = "Incorrect password. The CAS PDF could not be opened with the provided password. Please check your password and try again."
+                else:
+                    error_msg = f"Processing failed: {error_str}"
                 logger.error(f"CAS processing error: {error_msg}")
                 cas_import.mark_completed(success=False, error_message=error_msg)
             
@@ -198,7 +203,12 @@ class CASParserService:
                 cas_import.mark_completed(success=False, error_message=error_msg)
                 
             except Exception as e:
-                error_msg = f"Processing failed: {str(e)}"
+                # Check for specific validation errors that indicate wrong password
+                error_str = str(e)
+                if "validation errors for PartialCASData" in error_str and "investor_info" in error_str:
+                    error_msg = "Incorrect password. The CAS PDF could not be opened with the provided password. Please check your password and try again."
+                else:
+                    error_msg = f"Processing failed: {error_str}"
                 logger.error(f"CAS processing error: {error_msg}")
                 cas_import.mark_completed(success=False, error_message=error_msg)
             
