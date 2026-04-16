@@ -62,6 +62,11 @@ class PortfolioFund(models.Model):
     @property
     def total_invested(self):
         return sum(lot.units * lot.avg_nav for lot in self.lots.all())
+    
+    @property
+    def net_invested(self):
+        """Total amount invested in purchases only (excludes redemptions)"""
+        return sum(lot.units * lot.avg_nav for lot in self.lots.all() if lot.units > 0)
 
     @property
     def average_nav(self):
@@ -79,7 +84,7 @@ class PortfolioFund(models.Model):
                 total_units += lot.units
                 total_value += lot.units * lot.avg_nav
             else:
-                # Redemption - remove units at current average NAV
+                # Redemption - remove units at current average
                 # This adjusts the average based on what's actually redeemed
                 redemption_units = abs(lot.units)
                 if total_units > 0:
