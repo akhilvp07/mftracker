@@ -955,3 +955,55 @@ def run_migrations_api(request):
             'error': str(e)
         }, status=500)
 
+
+@csrf_exempt
+@require_POST
+def setup_admin_api(request):
+    """API endpoint to create admin user - for production deployment"""
+    from django.contrib.auth.models import User
+    import os
+    
+    # Get admin credentials from request or use defaults
+    username = request.POST.get('username', os.environ.get('ADMIN_USERNAME', 'admin'))
+    email = request.POST.get('email', os.environ.get('ADMIN_EMAIL', 'admin@example.com'))
+    password = request.POST.get('password', os.environ.get('ADMIN_PASSWORD', 'admin123'))
+    
+    try:
+        # Check if user exists
+        user, created = User.objects.get_or_create(
+            username=username,
+            defaults={
+                'email': email,
+                'is_staff': True,
+                'is_superuser': True,
+            }
+        )
+
+        if created:
+            user.set_password(password)
+            user.save()
+            return JsonResponse({
+                'status': 'success',
+                'message': f'Admin user "{username}" created successfully!',
+                'username': username,
+                'password': password,
+                'warning': 'Please change the password after first login!'
+            })
+        else:
+            # Update existing user
+            user.is_staff = True
+            user.is_superuser = True
+            if password and password != 'admin123':  # Only update if not default
+                user.set_password(password)
+            user.save()
+            return JsonResponse({
+                'status': 'success',
+                'message': f'Admin user "{username}" updated successfully!'
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
