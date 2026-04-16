@@ -473,9 +473,10 @@ def _save_nav_history(fund, nav_data):
 def refresh_all_nav_bulk(user_portfolio):
     """
     Refresh NAV for all funds using mfdata.in bulk endpoint.
-    Falls back to individual refresh if bulk fails.
+    Falls back to mfapi.in for individual funds if mfdata.in data is older than 1 day.
     """
     from portfolio.models import PortfolioFund
+    from datetime import date
     
     logger.info(f"Starting bulk NAV refresh for portfolio {user_portfolio.name}")
     
@@ -487,6 +488,10 @@ def refresh_all_nav_bulk(user_portfolio):
         logger.warning("No funds found in portfolio")
         return
     
+    # Track funds that need mfapi.in fallback
+    funds_needing_mfapi = []
+    mfapi_updated_count = 0
+    
     # Try bulk refresh first
     try:
         from .mfdata_service import fetch_bulk_nav
@@ -495,6 +500,9 @@ def refresh_all_nav_bulk(user_portfolio):
         if bulk_nav_data:
             logger.info(f"Successfully fetched bulk NAV data for {len(bulk_nav_data)} funds")
             
+            # Get today's date for comparison
+            today = date.today()
+            
             # Update each fund
             updated_count = 0
             for pf in holdings:
@@ -502,10 +510,26 @@ def refresh_all_nav_bulk(user_portfolio):
                 if code in bulk_nav_data:
                     nav_data = bulk_nav_data[code]
                     
+                    # Parse NAV date
+                    nav_date_str = nav_data.get('nav_date')
+                    if nav_date_str:
+                        try:
+                            nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+                            
+                            # Check if NAV data is stale considering weekends
+                            if is_nav_data_stale(nav_date, today):
+                                days_old = (today - nav_date).days
+                                logger.info(f"mfdata.in data for {pf.fund.scheme_name} is {days_old} days old ({nav_date}), will try mfapi.in")
+                                funds_needing_mfapi.append(pf)
+                                continue
+                        except ValueError:
+                            logger.warning(f"Invalid date format for {pf.fund.scheme_name}: {nav_date_str}")
+                    
                     # Update fund with rich data
                     from decimal import Decimal
                     pf.fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
-                    pf.fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
+                    if nav_date_str:
+                        pf.fund.nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
                     pf.fund.nav_last_updated = timezone.now()
                     
                     # Update all available fields from mfdata.in
@@ -546,7 +570,21 @@ def refresh_all_nav_bulk(user_portfolio):
                     
                     logger.info(f"Updated {pf.fund.scheme_name}: NAV={pf.fund.current_nav} ({pf.fund.day_change_pct}%) | ER={pf.fund.expense_ratio}% | Rating={pf.fund.morningstar_rating}")
             
-            logger.info(f"Bulk NAV refresh completed: {updated_count}/{len(holdings)} funds updated")
+            logger.info(f"Bulk NAV refresh completed: {updated_count}/{len(holdings)} funds updated from mfdata.in")
+            
+            # Now try mfapi.in for funds with old data
+            if funds_needing_mfapi:
+                logger.info(f"Attempting to update {len(funds_needing_mfapi)} funds from mfapi.in due to stale mfdata.in data")
+                for pf in funds_needing_mfapi:
+                    try:
+                        if _try_mfapi_fallback(pf.fund):
+                            mfapi_updated_count += 1
+                            logger.info(f"Successfully updated {pf.fund.scheme_name} from mfapi.in")
+                    except Exception as e:
+                        logger.error(f"mfapi.in fallback failed for {pf.fund.scheme_code}: {e}")
+            
+            total_updated = updated_count + mfapi_updated_count
+            logger.info(f"Total NAV refresh completed: {total_updated}/{len(holdings)} funds updated (mfdata.in: {updated_count}, mfapi.in: {mfapi_updated_count})")
             return
         
     except Exception as e:
@@ -559,6 +597,78 @@ def refresh_all_nav_bulk(user_portfolio):
                 fetch_fund_nav(pf.fund, fetch_history=False)
             except Exception as e:
                 logger.error(f"Individual refresh failed for {pf.fund.scheme_code}: {e}")
+
+
+def is_nav_data_stale(nav_date, current_date=None):
+    """
+    Check if NAV data is stale considering weekends.
+    Returns True if data is considered stale and needs refresh.
+    """
+    from datetime import date
+    
+    if current_date is None:
+        current_date = date.today()
+    
+    days_old = (current_date - nav_date).days
+    weekday_today = current_date.weekday()  # 0=Monday, 6=Sunday
+    weekday_nav = nav_date.weekday()
+    
+    # If same day or 1 day old, not stale
+    if days_old <= 1:
+        return False
+    
+    # Weekend considerations:
+    # Monday with Friday NAV (3 days old) - Not stale
+    if weekday_today == 0 and weekday_nav == 4 and days_old <= 3:
+        return False
+    
+    # Sunday with Friday NAV (2 days old) - Not stale  
+    if weekday_today == 6 and weekday_nav == 4 and days_old <= 2:
+        return False
+    
+    # Saturday with Friday NAV (1 day old) - Not stale
+    if weekday_today == 5 and weekday_nav == 4 and days_old <= 1:
+        return False
+    
+    # Tuesday with Friday NAV (4+ days old) - Stale
+    if weekday_today == 1 and weekday_nav == 4 and days_old >= 4:
+        return True
+    
+    # For all other cases, if more than 1 day old, consider stale
+    return days_old > 1
+
+
+def _try_mfapi_fallback(fund):
+    """Try fetching latest NAV from mfapi.in for a single fund"""
+    import requests
+    import json
+    from decimal import Decimal
+    
+    try:
+        url = f"https://api.mfapi.in/mf/{fund.scheme_code}/latest"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        if data.get('status') == 'SUCCESS' and data.get('data'):
+            nav_info = data['data'][0]  # Latest NAV is first element
+            
+            # Update fund with NAV from mfapi.in
+            fund.current_nav = Decimal(str(nav_info['nav']))
+            
+            # Parse date (format: "26-10-2024")
+            nav_date = datetime.strptime(nav_info['date'], '%d-%m-%Y').date()
+            fund.nav_date = nav_date
+            fund.nav_last_updated = timezone.now()
+            
+            fund.save()
+            return True
+            
+    except Exception as e:
+        logger.error(f"Failed to fetch from mfapi.in for {fund.scheme_code}: {e}")
+    
+    return False
 
 
 def refresh_all_nav(user_portfolio):
