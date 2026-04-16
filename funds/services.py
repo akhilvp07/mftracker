@@ -185,14 +185,29 @@ def _try_mfdata(fund, fetch_history):
         elif nav_date_str and fund.current_nav:
             # Calculate day change from NAV history if not provided by API
             from funds.models import NAVHistory
+            from datetime import timedelta
             nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
-            # Get most recent previous NAV (handles weekends/holidays)
-            prev_nav = NAVHistory.objects.filter(
-                fund=fund, 
-                date__lt=nav_date
-            ).order_by('-date').first()
-            if prev_nav and prev_nav.nav:
-                fund.day_change = fund.current_nav - prev_nav.nav
+            
+            # Only calculate if history is recent (within last 7 days)
+            # This prevents calculating against stale data
+            recent_history = NAVHistory.objects.filter(
+                fund=fund,
+                date__gte=nav_date - timedelta(days=7)
+            ).exists()
+            
+            if recent_history:
+                # Get most recent previous NAV (handles weekends/holidays)
+                prev_nav = NAVHistory.objects.filter(
+                    fund=fund, 
+                    date__lt=nav_date
+                ).order_by('-date').first()
+                if prev_nav and prev_nav.nav:
+                    fund.day_change = fund.current_nav - prev_nav.nav
+            elif old_nav and old_nav > 0:
+                # Fallback: use old NAV from fund record if history is stale
+                # This is less accurate but better than showing no change
+                logger.info(f"Using old NAV for day change calculation for {fund.scheme_name} (history not recent)")
+                fund.day_change = fund.current_nav - old_nav
         
         if 'day_change_pct' in nav_data and nav_data['day_change_pct'] is not None:
             fund.day_change_pct = Decimal(str(nav_data['day_change_pct']))
@@ -200,14 +215,26 @@ def _try_mfdata(fund, fetch_history):
             # Calculate percentage if we have the change value
             # Find previous NAV for percentage calculation
             from funds.models import NAVHistory
+            from datetime import timedelta
             nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
-            # Get most recent previous NAV (handles weekends/holidays)
-            prev_nav = NAVHistory.objects.filter(
-                fund=fund, 
-                date__lt=nav_date
-            ).order_by('-date').first()
-            if prev_nav and prev_nav.nav > 0:
-                fund.day_change_pct = (fund.day_change / prev_nav.nav) * 100
+            
+            # Only calculate if history is recent (within last 7 days)
+            recent_history = NAVHistory.objects.filter(
+                fund=fund,
+                date__gte=nav_date - timedelta(days=7)
+            ).exists()
+            
+            if recent_history:
+                # Get most recent previous NAV (handles weekends/holidays)
+                prev_nav = NAVHistory.objects.filter(
+                    fund=fund, 
+                    date__lt=nav_date
+                ).order_by('-date').first()
+                if prev_nav and prev_nav.nav > 0:
+                    fund.day_change_pct = (fund.day_change / prev_nav.nav) * 100
+            elif old_nav and old_nav > 0:
+                # Fallback: use old NAV from fund record if history is stale
+                fund.day_change_pct = (fund.day_change / old_nav) * 100
         
         if 'morningstar' in nav_data and nav_data['morningstar'] is not None:
             fund.morningstar_rating = nav_data['morningstar']
