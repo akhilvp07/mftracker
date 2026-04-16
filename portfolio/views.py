@@ -89,7 +89,8 @@ def dashboard(request):
 
         # Calculate cost basis
         try:
-            cost_basis = pf.total_cost_basis or Decimal('0')
+            # For cost basis view, use invested amount based on average NAV
+            cost_basis = pf.invested_at_average_nav or Decimal('0')
             gain_cost_basis = current - cost_basis
             gain_pct_cost_basis = (gain_cost_basis / cost_basis * 100) if cost_basis > 0 else Decimal('0')
         except Exception as e:
@@ -870,7 +871,7 @@ def cas_upload(request):
     password = request.POST.get('password', '').strip()
     
     if not password:
-        return JsonResponse({'error': 'Password (PAN) is required'}, status=400)
+        return JsonResponse({'error': 'Password is required'}, status=400)
     
     # Validate file type
     if not cas_file.name.lower().endswith('.pdf'):

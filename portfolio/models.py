@@ -64,6 +64,38 @@ class PortfolioFund(models.Model):
         return sum(lot.units * lot.avg_nav for lot in self.lots.all())
 
     @property
+    def average_nav(self):
+        """Calculate average NAV after all transactions (purchases and redemptions)"""
+        # Get all lots sorted by date
+        lots = sorted(self.lots.all(), key=lambda x: x.purchase_date)
+        
+        # Track running totals
+        total_units = decimal.Decimal('0')
+        total_value = decimal.Decimal('0')
+        
+        for lot in lots:
+            if lot.units > 0:
+                # Purchase - add units and value
+                total_units += lot.units
+                total_value += lot.units * lot.avg_nav
+            else:
+                # Redemption - remove units at current average NAV
+                # This adjusts the average based on what's actually redeemed
+                redemption_units = abs(lot.units)
+                if total_units > 0:
+                    # Remove units and corresponding value at average NAV
+                    value_to_remove = redemption_units * (total_value / total_units)
+                    total_units -= redemption_units
+                    total_value -= value_to_remove
+        
+        return total_value / total_units if total_units > 0 else decimal.Decimal('0')
+    
+    @property
+    def invested_at_average_nav(self):
+        """Calculate invested amount based on average NAV and current units"""
+        return self.total_units * self.average_nav
+    
+    @property
     def total_cost_basis(self):
         """Traditional cost basis using FIFO method"""
         try:

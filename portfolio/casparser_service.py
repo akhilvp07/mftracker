@@ -465,6 +465,22 @@ class CASParserService:
                 cas_import.save(update_fields=['skipped_transactions'])
                 return
             
+            # Check for duplicate transaction
+            existing_tx = CASTransaction.objects.filter(
+                fund=fund,
+                transaction_type=tx_type,
+                transaction_date=tx_date,
+                units=units,
+                nav=nav,
+                amount=amount
+            ).first()
+            
+            if existing_tx:
+                logger.info(f"Skipping duplicate transaction for {fund.scheme_name} on {tx_date}: {units} units @ {nav}")
+                cas_import.skipped_transactions += 1
+                cas_import.save(update_fields=['skipped_transactions'])
+                return
+            
             # Create CAS transaction record
             cas_tx = CASTransaction.objects.create(
                 cas_import=cas_import,
