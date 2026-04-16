@@ -37,10 +37,25 @@ def dashboard(request):
     seed_status = SeedStatus.objects.filter(pk=1).first()
 
     # Auto-refresh NAV for funds that need it (check intelligently)
-    from .utils import bulk_check_and_refresh
+    from .utils import bulk_check_and_refresh, should_refresh_nav
     import time
     from datetime import datetime
     
+    # Check if any fund has stale NAV on first load
+    should_refresh_all = False
+    for pf in holdings:
+        needs_refresh, reason = should_refresh_nav(pf.fund)
+        if needs_refresh:
+            should_refresh_all = True
+            logger.info(f"Fund {pf.fund.scheme_name} needs refresh: {reason}")
+            break
+    
+    # If any fund needs refresh, refresh all
+    if should_refresh_all:
+        messages.info(request, "Detected stale NAV data. Refreshing all funds...")
+        bulk_check_and_refresh(request, portfolio, fetch_history=False)
+    
+    # Also run periodic bulk check (existing logic)
     last_check = request.session.get('last_nav_auto_check', 0)
     current_time = int(time.time())
     current_hour = datetime.now().hour
