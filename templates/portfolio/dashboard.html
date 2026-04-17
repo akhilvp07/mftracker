@@ -203,7 +203,7 @@
             {% endif %}
           </td>
           <td class="text-end font-mono">
-            {% if item.pf.fund.day_change_pct is not None %}
+            {% if item.pf.fund.day_change_pct %}
               <span class="{% if item.pf.fund.day_change_pct > 0 %}text-gain{% elif item.pf.fund.day_change_pct < 0 %}text-loss{% else %}text-muted{% endif %}">
                 {% if item.pf.fund.day_change_pct > 0 %}+{% endif %}{{ item.pf.fund.day_change_pct|floatformat:2 }}%
               </span>
