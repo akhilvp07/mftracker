@@ -422,6 +422,13 @@ def _fetch_nav_from_amfi_fallback(fund):
             # Parse date (DD-MMM-YYYY format)
             nav_date = datetime.strptime(date_str, '%d-%b-%Y').date()
             
+            # Get previous day's NAV from history for accurate calculation
+            from funds.models import NAVHistory
+            prev_nav = NAVHistory.objects.filter(
+                fund=fund,
+                date__lt=nav_date
+            ).order_by('-date').first()
+            
             # Store old NAV before updating
             old_nav = fund.current_nav
             
@@ -430,8 +437,13 @@ def _fetch_nav_from_amfi_fallback(fund):
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
             
-            # Calculate day change
-            if old_nav and old_nav != nav_val:
+            # Calculate day change using previous day's NAV
+            if prev_nav and prev_nav.nav:
+                fund.day_change = nav_val - prev_nav.nav
+                if prev_nav.nav > 0:
+                    fund.day_change_pct = (fund.day_change / prev_nav.nav) * 100
+            elif old_nav and old_nav != nav_val:
+                # Fallback to old NAV if history not available
                 fund.day_change = nav_val - old_nav
                 if old_nav > 0:
                     fund.day_change_pct = (fund.day_change / old_nav) * 100
