@@ -14,6 +14,7 @@ urlpatterns = [
     path('bulk-nav-refresh/', views.refresh_all_nav, name='bulk_nav_refresh'),
     # Debug endpoints
     path('debug/day-change/<str:scheme_code>/', views_debug.debug_fund_day_change, name='debug_fund_day_change'),
+    path('debug/update-day-change/<str:scheme_code>/', views_debug.update_day_change, name='update_day_change'),
     path('lot/<int:lot_id>/delete/', views.delete_lot, name='delete_lot'),
     path('recalculate-xirr/', views.recalculate_xirr, name='recalculate_xirr'),
     path('settings/', views.settings_view, name='settings'),
