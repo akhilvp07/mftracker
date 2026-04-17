@@ -53,7 +53,21 @@ def dashboard(request):
     # If any fund needs refresh, refresh all
     if should_refresh_all:
         messages.info(request, "Detected stale NAV data. Refreshing all funds...")
-        bulk_check_and_refresh(request, portfolio, fetch_history=False)
+        # Force refresh by skipping business hours check
+        from funds.services import fetch_fund_nav
+        refreshed_count = 0
+        for pf in holdings:
+            should_refresh, reason = should_refresh_nav(pf.fund)
+            if should_refresh:
+                try:
+                    fetch_fund_nav(pf.fund, fetch_history=False)
+                    refreshed_count += 1
+                    logger.info(f"Force refreshed NAV for {pf.fund.scheme_name}")
+                except Exception as e:
+                    logger.warning(f"Force refresh failed for {pf.fund.scheme_name}: {e}")
+        
+        if refreshed_count > 0:
+            messages.info(request, f"Refreshed NAV for {refreshed_count} fund{'s' if refreshed_count > 1 else ''}")
     
     # Also run periodic bulk check (existing logic)
     last_check = request.session.get('last_nav_auto_check', 0)

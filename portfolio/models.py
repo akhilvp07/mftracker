@@ -118,15 +118,15 @@ class PortfolioFund(models.Model):
             
             for lot in lots:
                 if lot.units > 0:
-                    # Purchase - add to queue with NAV rounded to 2 decimals
+                    # Purchase - add to queue with NAV rounded to 2 decimals and units to 2 decimals
                     purchase_queue.append({
-                        'units': lot.units,
+                        'units': lot.units.quantize(decimal.Decimal('0.01')),
                         'avg_nav': lot.avg_nav.quantize(decimal.Decimal('0.01')),
                         'purchase_date': lot.purchase_date
                     })
                 else:
                     # Redemption - remove from FIFO queue
-                    units_to_remove = abs(lot.units)
+                    units_to_remove = abs(lot.units).quantize(decimal.Decimal('0.01'))
                     while units_to_remove > 0 and purchase_queue:
                         if purchase_queue[0]['units'] <= units_to_remove:
                             # Remove entire lot
@@ -139,7 +139,9 @@ class PortfolioFund(models.Model):
             
             # Calculate cost of remaining units
             for lot in purchase_queue:
-                total_cost += lot['units'] * lot['avg_nav']
+                # Round each transaction amount to 2 decimals
+                transaction_amount = (lot['units'] * lot['avg_nav']).quantize(decimal.Decimal('0.01'))
+                total_cost += transaction_amount
             
             # Ensure we return a valid Decimal
             return total_cost if total_cost else decimal.Decimal('0')
@@ -150,9 +152,12 @@ class PortfolioFund(models.Model):
     @property
     def current_value(self):
         nav = self.fund.current_nav
-        if nav:
-            return self.total_units * nav
-        return decimal.Decimal('0')
+        if nav is None:
+            return decimal.Decimal('0')
+        # Convert to Decimal if it's a float
+        if not isinstance(nav, decimal.Decimal):
+            nav = decimal.Decimal(str(nav))
+        return self.total_units * nav
 
     @property
     def absolute_gain(self):

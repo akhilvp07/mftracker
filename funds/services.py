@@ -68,10 +68,13 @@ def fetch_fund_nav(fund, fetch_history=False):
     for api_name, api_func in api_sources:
         try:
             logger.info(f"Trying {api_name} for {fund.scheme_code}")
-            if api_func(fund, fetch_history):
+            result = api_func(fund, fetch_history)
+            if result:
                 used_api = api_name
                 logger.info(f"Successfully fetched NAV from {api_name} for {fund.scheme_code}")
                 break  # Success, no need to try other APIs
+            else:
+                logger.warning(f"{api_name} returned False for {fund.scheme_code}")
         except Exception as e:
             logger.warning(f"{api_name} failed for {fund.scheme_code}: {e}")
             continue  # Try next API
@@ -100,6 +103,7 @@ def fetch_fund_nav(fund, fetch_history=False):
 def _try_mfdata(fund, fetch_history):
     """Try fetching from mfdata.in API."""
     from .mfdata_service import fetch_fund_nav as fetch_from_mfdata
+    from datetime import timedelta, timezone
     
     # Determine if we should skip cache
     skip_cache = False
@@ -116,8 +120,8 @@ def _try_mfdata(fund, fetch_history):
             skip_cache = True
             logger.info(f"No history exists for {fund.scheme_code}, skipping cache")
         else:
-            from datetime import timedelta
-            now = timezone.now()
+            from datetime import timedelta, datetime
+            now = datetime.now(timezone.utc)
             
             # Check if history is stale (more than 1 day old)
             if (now.date() - latest_history.date) > timedelta(days=1):
@@ -138,6 +142,12 @@ def _try_mfdata(fund, fetch_history):
         if nav_date_str:
             try:
                 nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+                
+                # Check if data is stale (more than 2 days old)
+                today = timezone.now().date()
+                if (today - nav_date).days > 2:
+                    logger.warning(f"Skipping {fund.scheme_name}: mfdata.in data ({nav_date}) is too old (more than 2 days)")
+                    return False  # Try next API
                 
                 # IMPORTANT: Check if existing data is newer
                 if fund.nav_date and nav_date < fund.nav_date:
