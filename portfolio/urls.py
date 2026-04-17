@@ -10,7 +10,7 @@ urlpatterns = [
     path('fund/<int:pf_id>/remove/', views.remove_fund, name='remove_fund'),
     path('fund/<int:pf_id>/refresh-nav/', views.refresh_nav, name='refresh_nav'),
     path('refresh-all-nav/', views.refresh_all_nav, name='refresh_all_nav'),
-    path('bulk-nav-refresh/', views.bulk_nav_refresh, name='bulk_nav_refresh'),
+    path('bulk-nav-refresh/', views.refresh_all_nav, name='bulk_nav_refresh'),
     # Debug endpoints
     path('debug/day-change/<str:scheme_code>/', views_debug.debug_fund_day_change, name='debug_fund_day_change'),
     path('lot/<int:lot_id>/delete/', views.delete_lot, name='delete_lot'),
