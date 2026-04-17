@@ -335,8 +335,8 @@ def _try_mfapi(fund, fetch_history):
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
             
-            # Calculate day change if not already set
-            if not fund.day_change and old_nav:
+            # Always calculate day change when NAV is updated
+            if old_nav:
                 fund.day_change = nav_val - old_nav
                 if old_nav > 0:
                     fund.day_change_pct = (fund.day_change / old_nav) * 100
@@ -422,10 +422,20 @@ def _fetch_nav_from_amfi_fallback(fund):
             # Parse date (DD-MMM-YYYY format)
             nav_date = datetime.strptime(date_str, '%d-%b-%Y').date()
             
+            # Store old NAV before updating
+            old_nav = fund.current_nav
+            
             # Update fund
             fund.current_nav = nav_val
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
+            
+            # Calculate day change
+            if old_nav and old_nav != nav_val:
+                fund.day_change = nav_val - old_nav
+                if old_nav > 0:
+                    fund.day_change_pct = (fund.day_change / old_nav) * 100
+            
             fund.save()
             
             # Cache the NAV data for 4 hours (even from AMFI)
