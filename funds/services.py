@@ -50,6 +50,25 @@ def _fetch_with_retry(url, max_retries=SEED_MAX_RETRIES, stream=False, timeout=6
             time.sleep(SEED_RETRY_DELAY)
 
 
+def calculate_day_change_from_history(fund):
+    """Calculate day change using NAV history"""
+    from funds.models import NAVHistory
+    
+    # Get previous day's NAV from history
+    prev_nav = NAVHistory.objects.filter(
+        fund=fund,
+        date__lt=fund.nav_date
+    ).order_by('-date').first()
+    
+    if prev_nav and prev_nav.nav and fund.current_nav:
+        change = fund.current_nav - prev_nav.nav
+        if prev_nav.nav > 0:
+            change_pct = (change / prev_nav.nav) * 100
+            return change, change_pct
+    
+    return None, None
+
+
 def fetch_fund_nav(fund, fetch_history=False):
     """Fetch current NAV (and optionally full history) for a fund using round-robin API retry."""
     from decimal import Decimal
@@ -98,6 +117,15 @@ def fetch_fund_nav(fund, fetch_history=False):
     
     if not used_api:
         logger.error(f"All APIs failed for {fund.scheme_code}")
+    else:
+        # Calculate day change if not provided by API or if it's None/0
+        if not fund.day_change or not fund.day_change_pct:
+            change, change_pct = calculate_day_change_from_history(fund)
+            if change is not None and change_pct is not None:
+                fund.day_change = change
+                fund.day_change_pct = change_pct
+                fund.save()
+                logger.info(f"Calculated day change from history for {fund.scheme_name}: {change_pct:.2f}%")
 
 
 def _try_mfdata(fund, fetch_history):
@@ -335,11 +363,11 @@ def _try_mfapi(fund, fetch_history):
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
             
-            # Always calculate day change when NAV is updated
-            if old_nav:
-                fund.day_change = nav_val - old_nav
-                if old_nav > 0:
-                    fund.day_change_pct = (fund.day_change / old_nav) * 100
+            # mfapi.in doesn't provide day change, so calculate from history
+            change, change_pct = calculate_day_change_from_history(fund)
+            if change is not None and change_pct is not None:
+                fund.day_change = change
+                fund.day_change_pct = change_pct
             
             fund.save()
             
@@ -422,13 +450,6 @@ def _fetch_nav_from_amfi_fallback(fund):
             # Parse date (DD-MMM-YYYY format)
             nav_date = datetime.strptime(date_str, '%d-%b-%Y').date()
             
-            # Get previous day's NAV from history for accurate calculation
-            from funds.models import NAVHistory
-            prev_nav = NAVHistory.objects.filter(
-                fund=fund,
-                date__lt=nav_date
-            ).order_by('-date').first()
-            
             # Store old NAV before updating
             old_nav = fund.current_nav
             
@@ -437,16 +458,11 @@ def _fetch_nav_from_amfi_fallback(fund):
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
             
-            # Calculate day change using previous day's NAV
-            if prev_nav and prev_nav.nav:
-                fund.day_change = nav_val - prev_nav.nav
-                if prev_nav.nav > 0:
-                    fund.day_change_pct = (fund.day_change / prev_nav.nav) * 100
-            elif old_nav and old_nav != nav_val:
-                # Fallback to old NAV if history not available
-                fund.day_change = nav_val - old_nav
-                if old_nav > 0:
-                    fund.day_change_pct = (fund.day_change / old_nav) * 100
+            # AMFI doesn't provide day change, so calculate from history
+            change, change_pct = calculate_day_change_from_history(fund)
+            if change is not None and change_pct is not None:
+                fund.day_change = change
+                fund.day_change_pct = change_pct
             
             fund.save()
             
