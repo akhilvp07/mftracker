@@ -40,19 +40,26 @@ def dashboard(request):
     from .utils import bulk_check_and_refresh, should_refresh_nav
     import time
     from datetime import datetime
+
+    # Check if we recently refreshed to avoid excessive API calls
+    last_dashboard_refresh = request.session.get('last_dashboard_refresh', 0)
+    current_time = int(time.time())
     
-    # Check if any fund has stale NAV on first load
-    should_refresh_all = False
-    for pf in holdings:
-        needs_refresh, reason = should_refresh_nav(pf.fund)
-        if needs_refresh:
-            should_refresh_all = True
-            logger.info(f"Fund {pf.fund.scheme_name} needs refresh: {reason}")
-            break
+    # Only check for stale NAV if last check was more than 5 minutes ago
+    if current_time - last_dashboard_refresh > 300:  # 5 minutes = 300 seconds
+        # Check if any fund has stale NAV on first load
+        should_refresh_all = False
+        for pf in holdings:
+            needs_refresh, reason = should_refresh_nav(pf.fund)
+            if needs_refresh:
+                should_refresh_all = True
+                logger.info(f"Fund {pf.fund.scheme_name} needs refresh: {reason}")
+                break
+    else:
+        should_refresh_all = False
     
-    # If any fund needs refresh, refresh all
+    # If any fund needs refresh, refresh only those that need it
     if should_refresh_all:
-        messages.info(request, "Detected stale NAV data. Refreshing all funds...")
         # Force refresh by skipping business hours check
         from funds.services import fetch_fund_nav
         refreshed_count = 0
@@ -62,12 +69,15 @@ def dashboard(request):
                 try:
                     fetch_fund_nav(pf.fund, fetch_history=False)
                     refreshed_count += 1
-                    logger.info(f"Force refreshed NAV for {pf.fund.scheme_name}")
+                    logger.info(f"Force refreshed NAV for {pf.fund.scheme_name}: {reason}")
                 except Exception as e:
                     logger.warning(f"Force refresh failed for {pf.fund.scheme_name}: {e}")
         
         if refreshed_count > 0:
-            messages.info(request, f"Refreshed NAV for {refreshed_count} fund{'s' if refreshed_count > 1 else ''}")
+            messages.info(request, f"Auto-refreshed NAV for {refreshed_count} fund{'s' if refreshed_count > 1 else ''}")
+        
+        # Update session timestamp
+        request.session['last_dashboard_refresh'] = int(time.time())
     
     # Also run periodic bulk check (existing logic)
     last_check = request.session.get('last_nav_auto_check', 0)
@@ -201,9 +211,6 @@ def fund_detail(request, pf_id):
     pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
     lots = pf.lots.all()
     
-    # Refresh fund data to get latest NAV
-    pf.fund.refresh_from_db()
-    
     # Get period from request (default: 1y)
     period = request.GET.get('period', '1y')
     
@@ -230,9 +237,9 @@ def fund_detail(request, pf_id):
         last_check = request.session.get(fund_cache_key, 0)
         current_time = int(time.time())
         
-        # Only check if last check was more than 30 minutes ago
+        # Only check if last check was more than 5 minutes ago (consistent with dashboard)
         # And only fetch history if the chart needs it (check if we have enough history)
-        if current_time - last_check > 1800:  # 30 minutes = 1800 seconds
+        if current_time - last_check > 300:  # 5 minutes = 300 seconds
             # Check if we have enough history for the selected period
             from funds.models import NAVHistory
             history_needed = {
@@ -246,7 +253,7 @@ def fund_detail(request, pf_id):
             if days_needed > 0:
                 oldest_date = timezone.now().date() - timedelta(days=days_needed)
                 history_count = NAVHistory.objects.filter(
-                    fund=pf.fund, 
+                    fund=pf.fund,
                     date__gte=oldest_date
                 ).count()
                 
@@ -257,6 +264,9 @@ def fund_detail(request, pf_id):
             
             auto_refresh_if_needed(request, pf.fund, fetch_history=fetch_history)
             request.session[fund_cache_key] = current_time
+    
+    # Refresh fund data from DB after any potential auto-refresh
+    pf.fund.refresh_from_db()
     
     # Fetch NAV history for chart
     from funds.models import NAVHistory

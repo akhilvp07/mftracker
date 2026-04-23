@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, date
 from decimal import Decimal
 from django.core.cache import cache
+from django.utils import timezone
 from .models import MutualFund
 
 logger = logging.getLogger(__name__)
@@ -333,8 +334,7 @@ def fetch_family_holdings(family_id, month=None, holding_type=None):
             holdings = data.get('data', {})
             
             # Add metadata
-            from django.utils import timezone as tz
-            local_time = tz.localtime(timezone.now())
+            local_time = timezone.localtime(timezone.now())
             holdings['fetched_at'] = local_time.strftime('%Y-%m-%dT%H:%M:%S')
             if month:
                 holdings['month'] = month
@@ -390,15 +390,14 @@ def fetch_family_holdings(family_id, month=None, holding_type=None):
             # Trigger intelligent monitoring for holdings changes
             try:
                 from alerts.intelligent_monitor import trigger_holdings_monitoring
-                from django.core.cache import cache
-                cache_key = f"holdings_monitor_trigger:{family_id}"
-                if not cache.get(cache_key):  # Avoid duplicate triggers
+                monitor_cache_key = f"holdings_monitor_trigger:{family_id}"
+                if not cache.get(monitor_cache_key):  # Avoid duplicate triggers
                     # Find a fund with this family_id to trigger monitoring
                     from funds.models import MutualFund
                     fund = MutualFund.objects.filter(family_id=family_id, is_active=True).first()
                     if fund:
                         trigger_holdings_monitoring(fund)
-                        cache.set(cache_key, True, timeout=3600)  # 1 hour cooldown
+                        cache.set(monitor_cache_key, True, timeout=3600)  # 1 hour cooldown
             except Exception as e:
                 logger.warning(f"Failed to trigger holdings monitoring: {e}")
             
@@ -421,8 +420,7 @@ def fetch_family_sectors(family_id):
         if data.get('status') == 'success':
             sectors = data.get('data', [])
             # Add metadata
-            from django.utils import timezone as tz
-            local_time = tz.localtime(timezone.now()).strftime('%Y-%m-%dT%H:%M:%S')
+            local_time = timezone.localtime(timezone.now()).strftime('%Y-%m-%dT%H:%M:%S')
             if isinstance(sectors, list):
                 # If sectors is a list, add metadata to each sector
                 for sector in sectors:

@@ -131,7 +131,7 @@ def fetch_fund_nav(fund, fetch_history=False):
 def _try_mfdata(fund, fetch_history):
     """Try fetching from mfdata.in API."""
     from .mfdata_service import fetch_fund_nav as fetch_from_mfdata
-    from datetime import timedelta, timezone
+    from datetime import timedelta, timezone, datetime
     
     # Determine if we should skip cache
     skip_cache = False
@@ -148,7 +148,6 @@ def _try_mfdata(fund, fetch_history):
             skip_cache = True
             logger.info(f"No history exists for {fund.scheme_code}, skipping cache")
         else:
-            from datetime import timedelta, datetime
             now = datetime.now(timezone.utc)
             
             # Check if history is stale (more than 1 day old)
@@ -223,7 +222,6 @@ def _try_mfdata(fund, fetch_history):
         elif nav_date_str and fund.current_nav:
             # Calculate day change from NAV history if not provided by API
             from funds.models import NAVHistory
-            from datetime import timedelta
             nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
             
             # Only calculate if history is recent (within last 7 days)
@@ -253,7 +251,6 @@ def _try_mfdata(fund, fetch_history):
             # Calculate percentage if we have the change value
             # Find previous NAV for percentage calculation
             from funds.models import NAVHistory
-            from datetime import timedelta
             nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
             
             # Only calculate if history is recent (within last 7 days)
@@ -340,7 +337,7 @@ def _try_mfapi(fund, fetch_history):
         nav_data = data.get('data', [])
         if nav_data:
             latest = nav_data[0]
-            nav_val = float(latest['nav'])
+            nav_val = Decimal(str(latest['nav']))
             date_str = latest['date']
             
             # Parse date
@@ -377,11 +374,10 @@ def _try_mfapi(fund, fetch_history):
             try:
                 from alerts.intelligent_monitor import trigger_nav_monitoring
                 # Run in background to avoid blocking
-                from django.core.cache import cache
-                cache_key = f"nav_monitor_trigger:{fund.scheme_code}"
-                if not cache.get(cache_key):  # Avoid duplicate triggers
+                monitor_cache_key = f"nav_monitor_trigger:{fund.scheme_code}"
+                if not cache.get(monitor_cache_key):  # Avoid duplicate triggers
                     trigger_nav_monitoring(fund)
-                    cache.set(cache_key, True, timeout=300)  # 5 minute cooldown
+                    cache.set(monitor_cache_key, True, timeout=300)  # 5 minute cooldown
             except Exception as e:
                 logger.warning(f"Failed to trigger NAV monitoring: {e}")
             
@@ -786,28 +782,18 @@ def is_nav_data_stale(nav_date, current_date=None):
     
     days_old = (current_date - nav_date).days
     weekday_today = current_date.weekday()  # 0=Monday, 6=Sunday
-    weekday_nav = nav_date.weekday()
     
-    # If same day or 1 day old, not stale
+    # If same day or 1 day old, not stale (latest available)
     if days_old <= 1:
         return False
     
-    # Weekend considerations:
-    # Monday with Friday NAV (3 days old) - Not stale
-    if weekday_today == 0 and weekday_nav == 4 and days_old <= 3:
+    # Weekend consideration: Monday with Friday NAV (3 days old) - Not stale
+    if weekday_today == 0 and days_old <= 3:
         return False
     
-    # Sunday with Friday NAV (2 days old) - Not stale  
-    if weekday_today == 6 and weekday_nav == 4 and days_old <= 2:
+    # Weekend consideration: Sunday with Friday NAV (2 days old) - Not stale
+    if weekday_today == 6 and days_old <= 2:
         return False
-    
-    # Saturday with Friday NAV (1 day old) - Not stale
-    if weekday_today == 5 and weekday_nav == 4 and days_old <= 1:
-        return False
-    
-    # Tuesday with Friday NAV (4+ days old) - Stale
-    if weekday_today == 1 and weekday_nav == 4 and days_old >= 4:
-        return True
     
     # For all other cases, if more than 1 day old, consider stale
     return days_old > 1

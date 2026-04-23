@@ -86,14 +86,17 @@ def should_refresh_nav(fund, check_history=False):
         expected_nav_date = get_latest_business_day(current_date)
         
         # NAV updates typically happen after market hours (7-9 PM)
-        # If it's past 8 PM on a weekday, we might expect today's NAV
-        if current_weekday <= 4 and current_time.hour >= 20:  # Weekday and past 8 PM
+        # Only expect today's NAV after 9 PM on weekdays (more conservative)
+        if current_weekday <= 4 and current_time.hour >= 21:  # Weekday and past 9 PM
             # Check if today is not a weekend
             if current_weekday < 5:  # Monday-Friday
-                # Today's NAV might be available after 8 PM
+                # Today's NAV might be available after 9 PM
                 expected_nav_date = current_date
         
-        return True, f"NAV is outdated (from {fund.nav_date}, expected from {expected_nav_date})"
+        # Only consider stale if the NAV is significantly older than expected
+        days_diff = (expected_nav_date - fund.nav_date).days
+        if days_diff > 1:  # Only refresh if more than 1 day older than expected
+            return True, f"NAV is outdated (from {fund.nav_date}, expected from {expected_nav_date})"
     
     # Only check history if explicitly requested (e.g., for charts)
     if check_history:
