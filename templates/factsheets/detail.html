@@ -206,7 +206,7 @@
               <td class="text-end font-mono {% if holding.month_change_pct > 0 %}text-gain{% elif holding.month_change_pct < 0 %}text-loss{% endif %}">
                 {% if holding.month_change_pct %}{% if holding.month_change_pct > 0 %}+{% endif %}{{ holding.month_change_pct|floatformat:2 }}%{% else %}—{% endif %}
               </td>
-              <td class="text-end font-mono">{% if holding.market_value %}₹{{ holding.market_value|floatformat:0 }}{% else %}—{% endif %}</td>
+              <td class="text-end font-mono">{% if holding.market_value %}₹{{ holding.market_value|div:10000000|floatformat:2 }}{% else %}—{% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>

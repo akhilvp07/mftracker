@@ -70,18 +70,22 @@
   <div class="col-6 col-lg-3">
     <div class="stat-card">
       <div class="stat-label">Total Units</div>
-      <div class="stat-value font-mono">{{ pf.total_units|floatformat:4 }}</div>
+      <div class="stat-value font-mono">{{ pf.total_units|floatformat:3 }}</div>
       <div class="stat-sub">across {{ lots|length }} lot{{ lots|length|pluralize }}</div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
     <div class="stat-card {% if pf.absolute_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
       <div class="stat-label">Gain / Loss</div>
-      <div class="stat-value {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
-        {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|indian_currency_int }}
+      <div class="stat-value {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %} gain-amount"
+           data-net-investment="{% if pf.absolute_gain_cost_basis >= 0 %}+{% endif %}{{ pf.absolute_gain_cost_basis|default:pf.absolute_gain|round_half_down:3|indian_currency }}"
+           data-cost-basis="{% if pf.absolute_gain >= 0 %}+{% endif %}{{ pf.absolute_gain|default:0|round_half_down:3|indian_currency }}">
+        {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|default:0|round_half_down:3|indian_currency }}
       </div>
-      <div class="stat-sub {% if pf.gain_pct >= 0 %}text-gain{% else %}text-loss{% endif %}">
-        {{ pf.gain_pct|floatformat:2 }}%
+      <div class="stat-sub {% if pf.gain_pct >= 0 %}text-gain{% else %}text-loss{% endif %} gain-pct"
+           data-net-investment="{{ pf.gain_pct_cost_basis|default:pf.gain_pct|round_half_down:2 }}%"
+           data-cost-basis="{{ pf.gain_pct|round_half_down:2 }}%">
+        {{ pf.gain_pct|round_half_down:2 }}%
       </div>
     </div>
   </div>
@@ -89,7 +93,7 @@
     <div class="stat-card {% if xirr and xirr >= 0 %}stat-card-gain{% endif %}">
       <div class="stat-label">XIRR</div>
       <div class="stat-value {% if xirr %}{% if xirr >= 0 %}text-gain{% else %}text-loss{% endif %}{% endif %}">
-        {% if xirr is not None %}{% if xirr >= 0 %}+{% endif %}{{ xirr|floatformat:2 }}%{% else %}<span class="text-muted">—</span>{% endif %}
+        {% if xirr is not None %}{% if xirr >= 0 %}+{% endif %}{{ xirr|round_half_down:2 }}%{% else %}<span class="text-muted">—</span>{% endif %}
       </div>
       <div class="stat-sub">Annualized return</div>
     </div>
@@ -139,27 +143,29 @@
       <div class="p-3">
         <div class="summary-row">
           <span class="summary-label">Invested</span>
-          <span class="summary-value font-mono invested-amount" 
-                data-net-investment="₹{{ pf.total_invested|indian_currency_int }}"
-                data-cost-basis="₹{{ pf.total_cost_basis|indian_currency_int|default:pf.total_invested|indian_currency_int }}">
-            ₹{{ pf.total_invested|indian_currency_int }}
+          <span class="summary-value font-mono invested-amount"
+                data-net-investment="{{ pf.total_invested|default:0|round_half_down:3|indian_currency }}"
+                data-cost-basis="{{ pf.total_cost_basis|default:pf.total_invested|round_half_down:3|indian_currency }}">
+            ₹{{ pf.total_invested|default:0|round_half_down:3|indian_currency }}
           </span>
         </div>
         <div class="summary-row">
           <span class="summary-label">Current Value</span>
-          <span class="summary-value font-mono">₹{{ pf.current_value|indian_currency_int }}</span>
+          <span class="summary-value font-mono">₹{{ pf.current_value|default:0|round_half_down:3|indian_currency }}</span>
         </div>
         <div class="summary-row average-nav-row" style="display: none;">
           <span class="summary-label">Avg NAV (Cost Basis)</span>
           <span class="summary-value font-mono">
-            <span class="avg-nav-value">₹{{ pf.fifo_average_nav|floatformat:2 }}</span>
-            <span class="text-muted small ms-2">({{ pf.total_units|floatformat:4 }} units)</span>
+            <span class="avg-nav-value">₹{{ pf.fifo_average_nav|round_half_down:4 }}</span>
+            <span class="text-muted small ms-2">({{ pf.total_units|floatformat:3 }} units)</span>
           </span>
         </div>
         <div class="summary-row">
           <span class="summary-label">Abs. Return</span>
-          <span class="summary-value font-mono {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
-            {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|indian_currency_int }}
+          <span class="summary-value font-mono gain-amount {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %}"
+                data-net-investment="{% if pf.absolute_gain_cost_basis >= 0 %}+{% endif %}{{ pf.absolute_gain_cost_basis|default:pf.absolute_gain|round_half_down:3|indian_currency }}"
+                data-cost-basis="{% if pf.absolute_gain >= 0 %}+{% endif %}{{ pf.absolute_gain|default:0|round_half_down:3|indian_currency }}">
+            {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|default:0|round_half_down:3|indian_currency }}
           </span>
         </div>
         <div class="summary-row">
@@ -177,13 +183,13 @@
         {% if pf.fund.expense_ratio %}
         <div class="summary-row">
           <span class="summary-label">Expense Ratio</span>
-          <span class="summary-value">{{ pf.fund.expense_ratio|floatformat:2 }}%</span>
+          <span class="summary-value">{{ pf.fund.expense_ratio|round_half_down:2 }}%</span>
         </div>
         {% endif %}
         {% if pf.fund.aum %}
         <div class="summary-row">
           <span class="summary-label">AUM</span>
-          <span class="summary-value">₹{{ pf.fund.aum|floatformat:0 }} Cr</span>
+          <span class="summary-value">₹{{ pf.fund.aum|round_half_down:0 }} Cr</span>
         </div>
         {% endif %}
         <div class="mt-3">
@@ -211,7 +217,7 @@
             <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
               <div class="small text-muted">1M</div>
               <div class="fw-bold {% if pf.fund.return_1m >= 0 %}text-gain{% else %}text-loss{% endif %}">
-                {% if pf.fund.return_1m >= 0 %}+{% endif %}{{ pf.fund.return_1m|floatformat:1 }}%
+                {% if pf.fund.return_1m >= 0 %}+{% endif %}{{ pf.fund.return_1m|round_half_down:1 }}%
               </div>
             </div>
           </div>
@@ -221,7 +227,7 @@
             <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
               <div class="small text-muted">3M</div>
               <div class="fw-bold {% if pf.fund.return_3m >= 0 %}text-gain{% else %}text-loss{% endif %}">
-                {% if pf.fund.return_3m >= 0 %}+{% endif %}{{ pf.fund.return_3m|floatformat:1 }}%
+                {% if pf.fund.return_3m >= 0 %}+{% endif %}{{ pf.fund.return_3m|round_half_down:1 }}%
               </div>
             </div>
           </div>
@@ -231,7 +237,7 @@
             <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
               <div class="small text-muted">6M</div>
               <div class="fw-bold {% if pf.fund.return_6m >= 0 %}text-gain{% else %}text-loss{% endif %}">
-                {% if pf.fund.return_6m >= 0 %}+{% endif %}{{ pf.fund.return_6m|floatformat:1 }}%
+                {% if pf.fund.return_6m >= 0 %}+{% endif %}{{ pf.fund.return_6m|round_half_down:1 }}%
               </div>
             </div>
           </div>
@@ -241,7 +247,7 @@
             <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
               <div class="small text-muted">1Y</div>
               <div class="fw-bold {% if pf.fund.return_1y >= 0 %}text-gain{% else %}text-loss{% endif %}">
-                {% if pf.fund.return_1y >= 0 %}+{% endif %}{{ pf.fund.return_1y|floatformat:1 }}%
+                {% if pf.fund.return_1y >= 0 %}+{% endif %}{{ pf.fund.return_1y|round_half_down:1 }}%
               </div>
               {% if pf.fund.rank_1y %}<div class="small text-muted">Rank #{{ pf.fund.rank_1y }}</div>{% endif %}
             </div>
@@ -252,7 +258,7 @@
             <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
               <div class="small text-muted">3Y</div>
               <div class="fw-bold {% if pf.fund.return_3y >= 0 %}text-gain{% else %}text-loss{% endif %}">
-                {% if pf.fund.return_3y >= 0 %}+{% endif %}{{ pf.fund.return_3y|floatformat:1 }}%
+                {% if pf.fund.return_3y >= 0 %}+{% endif %}{{ pf.fund.return_3y|round_half_down:1 }}%
               </div>
               {% if pf.fund.rank_3y %}<div class="small text-muted">Rank #{{ pf.fund.rank_3y }}</div>{% endif %}
             </div>
@@ -263,7 +269,7 @@
             <div class="text-center p-2 rounded" style="background: var(--hover-bg);">
               <div class="small text-muted">5Y</div>
               <div class="fw-bold {% if pf.fund.return_5y >= 0 %}text-gain{% else %}text-loss{% endif %}">
-                {% if pf.fund.return_5y >= 0 %}+{% endif %}{{ pf.fund.return_5y|floatformat:1 }}%
+                {% if pf.fund.return_5y >= 0 %}+{% endif %}{{ pf.fund.return_5y|round_half_down:1 }}%
               </div>
               {% if pf.fund.rank_5y %}<div class="small text-muted">Rank #{{ pf.fund.rank_5y }}</div>{% endif %}
             </div>
@@ -379,13 +385,13 @@
           {% if pf.fund.min_investment %}
           <div class="col-md-4 mb-2">
             <span class="text-muted small">Min Investment</span>
-            <div class="fw-medium">₹{{ pf.fund.min_investment|floatformat:0 }}</div>
+            <div class="fw-medium">₹{{ pf.fund.min_investment|round_half_down:0 }}</div>
           </div>
           {% endif %}
           {% if pf.fund.min_sip %}
           <div class="col-md-4 mb-2">
             <span class="text-muted small">Min SIP</span>
-            <div class="fw-medium">₹{{ pf.fund.min_sip|floatformat:0 }}</div>
+            <div class="fw-medium">₹{{ pf.fund.min_sip|round_half_down:0 }}</div>
           </div>
           {% endif %}
           {% if pf.fund.exit_load %}
@@ -417,8 +423,7 @@
           <th class="text-end">Units</th>
           <th class="text-end">Avg NAV</th>
           <th class="text-end">Invested</th>
-          <th class="text-end">Current Value</th>
-          <th class="text-end">Gain</th>
+          <th class="text-end">P&L</th>
           <th>Notes</th>
           <th></th>
         </tr>
@@ -427,24 +432,15 @@
         {% for lot in lots %}
         <tr class="lot-row">
           <td class="font-mono">{{ lot.purchase_date }}</td>
-          <td class="text-end font-mono">{{ lot.units|floatformat:4 }}</td>
-          <td class="text-end font-mono">₹{{ lot.avg_nav|floatformat:4 }}</td>
-          <td class="text-end font-mono">₹{{ lot.invested_amount|indian_currency_int }}</td></td>
+          <td class="text-end font-mono">{{ lot.units|floatformat:3 }}</td>
+          <td class="text-end font-mono">₹{{ lot.avg_nav|round_half_down:4 }}</td>
+          <td class="text-end font-mono">₹{{ lot.invested_amount|default:0|round_half_down:3|indian_currency }}</td>
           <td class="text-end font-mono">
-            {% if pf.fund.current_nav %}
-              ₹{% widthratio lot.units 1 pf.fund.current_nav %}
+            {% if lot.pnl is not None %}
+              <span class="{% if lot.pnl >= 0 %}text-gain{% else %}text-loss{% endif %}">
+                {% if lot.pnl >= 0 %}+{% endif %}₹{{ lot.pnl|round_half_down:3|indian_currency }}
+              </span>
             {% else %}—{% endif %}
-          </td>
-          <td class="text-end">
-            {% if pf.fund.current_nav %}
-              {% with curr=pf.fund.current_nav %}
-                {% if curr > lot.avg_nav %}
-                  <span class="text-gain">▲</span>
-                {% else %}
-                  <span class="text-loss">▼</span>
-                {% endif %}
-              {% endwith %}
-            {% endif %}
           </td>
           <td class="text-muted small">{{ lot.notes|default:"" }}</td>
           <td>
@@ -597,8 +593,7 @@ if (navDates.length && navValues.length) {
 }
 
 // Sync invested amount with dashboard toggle
-// Use window.load to ensure it runs after everything else including charts
-window.addEventListener('load', function() {
+document.addEventListener('DOMContentLoaded', function() {
   const investedAmounts = document.querySelectorAll('.invested-amount');
   
   // Load saved investment basis
@@ -610,9 +605,55 @@ window.addEventListener('load', function() {
     requestAnimationFrame(() => {
       investedAmounts.forEach(el => {
         if (useCostBasis) {
+          el.textContent = '₹' + el.dataset.costBasis;
+        } else {
+          el.textContent = '₹' + el.dataset.netInvestment;
+        }
+      });
+      
+      // Update Gain / Loss amounts
+      const gainAmounts = document.querySelectorAll('.gain-amount');
+      gainAmounts.forEach(el => {
+        if (useCostBasis) {
+          el.textContent = el.dataset.costBasis.startsWith('+') ? '₹' + el.dataset.costBasis : '₹' + (el.dataset.costBasis.startsWith('-') ? el.dataset.costBasis : '+' + el.dataset.costBasis);
+        } else {
+          el.textContent = el.dataset.netInvestment.startsWith('+') ? '₹' + el.dataset.netInvestment : '₹' + (el.dataset.netInvestment.startsWith('-') ? el.dataset.netInvestment : '+' + el.dataset.netInvestment);
+        }
+        // Update color based on gain/loss
+        const value = parseFloat(el.textContent.replace(/[₹+,]/g, ''));
+        el.classList.remove('text-gain', 'text-loss');
+        if (value >= 0) {
+          el.classList.add('text-gain');
+        } else {
+          el.classList.add('text-loss');
+        }
+        // Update parent stat-card color
+        const statCard = el.closest('.stat-card');
+        if (statCard) {
+          statCard.classList.remove('stat-card-gain', 'stat-card-loss');
+          if (value >= 0) {
+            statCard.classList.add('stat-card-gain');
+          } else {
+            statCard.classList.add('stat-card-loss');
+          }
+        }
+      });
+      
+      // Update Gain / Loss percentages
+      const gainPcts = document.querySelectorAll('.gain-pct');
+      gainPcts.forEach(el => {
+        if (useCostBasis) {
           el.textContent = el.dataset.costBasis;
         } else {
           el.textContent = el.dataset.netInvestment;
+        }
+        // Update color based on gain/loss
+        const value = parseFloat(el.textContent.replace(/%/g, ''));
+        el.classList.remove('text-gain', 'text-loss');
+        if (value >= 0) {
+          el.classList.add('text-gain');
+        } else {
+          el.classList.add('text-loss');
         }
       });
       
@@ -623,6 +664,9 @@ window.addEventListener('load', function() {
       }
     });
   }
+  
+  // Initial call to set the correct display on page load
+  updateInvestmentDisplay();
   
   // Listen for changes from dashboard
   window.addEventListener('storage', function(e) {

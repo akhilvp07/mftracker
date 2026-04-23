@@ -104,22 +104,33 @@ def dashboard(request):
         # This includes all purchases and redemptions
         invested = pf.total_invested  # This already includes all lots (positive and negative)
         current = pf.current_value
-        gain = current - invested
-        gain_pct = (gain / invested * 100) if invested > 0 else Decimal('0')
+        
+        # Calculate cost basis first (needed for gain percentage calculation)
+        cost_basis = pf.total_cost_basis or Decimal('0')
+        
+        # Calculate gain as total_units * (current_nav - fifo_average_nav) - cost basis method
+        nav = pf.fund.current_nav
+        if nav:
+            gain = pf.total_units * (nav - pf.fifo_average_nav)
+        else:
+            gain = Decimal('0')
+        
+        gain_pct = (gain / cost_basis * 100) if cost_basis > 0 else Decimal('0')
 
         # Get cached XIRR
         xirr_obj = XIRRCache.objects.filter(portfolio_fund=pf).first()
         xirr_val = float(xirr_obj.xirr_value) * 100 if xirr_obj and xirr_obj.xirr_value else None
 
-        # Calculate cost basis
+        # Calculate net investment method gain (toggle option)
         try:
-            # For cost basis view, use FIFO cost basis
-            cost_basis = pf.total_cost_basis or Decimal('0')
-            gain_cost_basis = current - cost_basis
-            gain_pct_cost_basis = (gain_cost_basis / cost_basis * 100) if cost_basis > 0 else Decimal('0')
+            # Calculate gain using net investment: total_units * (current_nav - average_nav)
+            if nav:
+                gain_cost_basis = pf.total_units * (nav - pf.average_nav)
+            else:
+                gain_cost_basis = Decimal('0')
+            gain_pct_cost_basis = (gain_cost_basis / invested * 100) if invested > 0 else Decimal('0')
         except Exception as e:
-            logger.error(f"Error calculating cost basis for fund {pf.fund.scheme_name}: {e}")
-            cost_basis = Decimal('0')
+            logger.error(f"Error calculating net investment gain for fund {pf.fund.scheme_name}: {e}")
             gain_cost_basis = Decimal('0')
             gain_pct_cost_basis = Decimal('0')
 
@@ -159,12 +170,13 @@ def dashboard(request):
     total_cost_basis = sum(item['cost_basis'] for item in holdings_data if item['cost_basis'])
     total_current = sum(item['current'] for item in holdings_data)
 
-    total_gain = total_current - total_invested
-    total_gain_pct = (total_gain / total_invested * 100) if total_invested > 0 else Decimal('0')
+    # Calculate total gain as sum of individual fund gains
+    total_gain = sum(item['gain'] for item in holdings_data)
+    total_gain_pct = (total_gain / total_cost_basis * 100) if total_cost_basis > 0 else Decimal('0')
     
-    # Calculate gains for cost basis method
-    total_gain_cost_basis = total_current - total_cost_basis
-    total_gain_pct_cost_basis = (total_gain_cost_basis / total_cost_basis * 100) if total_cost_basis > 0 else Decimal('0')
+    # Calculate gains for net investment method
+    total_gain_cost_basis = sum(item['gain_cost_basis'] for item in holdings_data)
+    total_gain_pct_cost_basis = (total_gain_cost_basis / total_invested * 100) if total_invested > 0 else Decimal('0')
 
     portfolio_xirr_obj = XIRRCache.objects.filter(portfolio=portfolio, portfolio_fund=None).first()
     portfolio_xirr = None
@@ -209,7 +221,17 @@ def dashboard(request):
 def fund_detail(request, pf_id):
     portfolio = get_object_or_404(Portfolio, user=request.user)
     pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
-    lots = pf.lots.all()
+    lots = pf.lots.all().order_by('-purchase_date')  # Sort by most recent first
+    
+    # Calculate P&L for each lot
+    for lot in lots:
+        if pf.fund.current_nav:
+            # P&L = units * (current_nav - avg_nav)
+            lot.pnl = lot.units * (pf.fund.current_nav - lot.avg_nav)
+            lot.current_value = lot.units * pf.fund.current_nav
+        else:
+            lot.current_value = None
+            lot.pnl = None
     
     # Get period from request (default: 1y)
     period = request.GET.get('period', '1y')
@@ -445,7 +467,17 @@ def edit_fund(request, pf_id):
             messages.success(request, 'Purchase lot deleted successfully.')
 
     # Get all lots for this fund
-    lots = pf.lots.all().order_by('purchase_date')
+    lots = pf.lots.all().order_by('-purchase_date')  # Sort by most recent first
+    
+    # Calculate P&L for each lot
+    for lot in lots:
+        if pf.fund.current_nav:
+            # P&L = units * (current_nav - avg_nav)
+            lot.pnl = lot.units * (pf.fund.current_nav - lot.avg_nav)
+            lot.current_value = lot.units * pf.fund.current_nav
+        else:
+            lot.current_value = None
+            lot.pnl = None
     
     return render(request, 'portfolio/edit_fund.html', {
         'pf': pf,

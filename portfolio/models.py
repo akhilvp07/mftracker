@@ -161,12 +161,39 @@ class PortfolioFund(models.Model):
 
     @property
     def absolute_gain(self):
-        return self.current_value - self.total_invested
+        """Calculate gain as total_units * (current_nav - fifo_average_nav) - cost basis method"""
+        nav = self.fund.current_nav
+        if nav is None:
+            return decimal.Decimal('0')
+        # Convert to Decimal if it's a float
+        if not isinstance(nav, decimal.Decimal):
+            nav = decimal.Decimal(str(nav))
+        # Fund gain = total_units * (current_nav - fifo_average_nav)
+        return self.total_units * (nav - self.fifo_average_nav)
+
+    @property
+    def absolute_gain_cost_basis(self):
+        """Absolute gain using net investment average: units * (current_nav - average_nav)"""
+        nav = self.fund.current_nav
+        if nav is None:
+            return decimal.Decimal('0')
+        # Convert to Decimal if it's a float
+        if not isinstance(nav, decimal.Decimal):
+            nav = decimal.Decimal(str(nav))
+        # P&L using net investment average: total_units * (current_nav - average_nav)
+        return self.total_units * (nav - self.average_nav)
 
     @property
     def gain_pct(self):
+        if self.total_cost_basis > 0:
+            return (self.absolute_gain / self.total_cost_basis) * 100
+        return decimal.Decimal('0')
+
+    @property
+    def gain_pct_cost_basis(self):
+        """Gain percentage using net investment average instead of cost basis"""
         if self.total_invested > 0:
-            return (self.absolute_gain / self.total_invested) * 100
+            return (self.absolute_gain_cost_basis / self.total_invested) * 100
         return decimal.Decimal('0')
 
 

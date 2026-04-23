@@ -14,7 +14,7 @@ def indian_currency(number):
     """
     try:
         # Convert to string and handle decimal
-        s = str(float(number))
+        s = str(number)
         
         # Split into integer and decimal parts
         if '.' in s:
@@ -71,5 +71,46 @@ def indian_currency_int(number):
         # Round to nearest integer first
         rounded = round(float(number))
         return indian_currency(int(rounded))
+    except (ValueError, TypeError):
+        return number
+
+
+@register.filter
+def div(number, divisor):
+    """
+    Divide number by divisor
+    """
+    try:
+        return float(number) / float(divisor)
+    except (ValueError, TypeError, ZeroDivisionError):
+        return number
+
+
+@register.filter
+def round_half_down(number, decimals=2):
+    """
+    Round number to specified decimal places using round half down.
+    If the decimal at position (decimals + 1) is > 5, round up.
+    If it's <= 5, truncate (keep the same value).
+    Returns a string with the exact number of decimal places.
+    """
+    try:
+        num = float(number)
+        multiplier = 10 ** decimals
+        # Multiply to shift decimal point
+        shifted = num * multiplier
+        # Get the decimal at position (decimals + 1) by looking at the first decimal of shifted
+        # For example: 259.3759456 with decimals=2 -> shifted=25937.59456
+        # We need to look at the first decimal (5) after the decimal point
+        fractional = shifted - int(shifted)
+        # Multiply by 10 to get the first decimal digit
+        next_digit = int(fractional * 10)
+        # If the next digit > 5, round up, otherwise truncate
+        if next_digit > 5:
+            result = int(shifted + 1) / multiplier
+        else:
+            result = int(shifted) / multiplier
+        # Format as string with exact decimal places
+        return f"{result:.{decimals}f}"
     except (ValueError, TypeError):
         return number

@@ -53,14 +53,14 @@
   <div class="col-6 col-lg-3">
     <div class="stat-card">
       <div class="stat-label"><i class="bi bi-wallet2 me-1"></i>Invested</div>
-      <div class="stat-value" data-net-investment="{{ total_invested|indian_currency_int }}" data-cost-basis="{{ total_cost_basis|indian_currency_int }}">₹{{ total_invested|indian_currency_int }}</div>
+      <div class="stat-value" data-net-investment="{{ total_invested|default:0|round_half_down:3|indian_currency }}" data-cost-basis="{{ total_cost_basis|default:0|round_half_down:3|indian_currency }}">₹{{ total_invested|default:0|round_half_down:3|indian_currency }}</div>
       <div class="stat-sub investment-method-label">Net Investment Basis</div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
     <div class="stat-card">
       <div class="stat-label"><i class="bi bi-currency-rupee me-1"></i>Current Value</div>
-      <div class="stat-value">₹{{ total_current|indian_currency_int }}</div>
+      <div class="stat-value">₹{{ total_current|default:0|round_half_down:3|indian_currency }}</div>
       <div class="stat-sub">Market value today</div>
     </div>
   </div>
@@ -68,14 +68,14 @@
     <div class="stat-card gain-loss-card {% if total_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
       <div class="stat-label"><i class="bi bi-{% if total_gain >= 0 %}arrow-up{% else %}arrow-down{% endif %}-circle me-1"></i>Gain / Loss</div>
       <div class="stat-value {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}"
-           data-net-investment="{% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|indian_currency_int }}"
-           data-cost-basis="{% if total_gain_cost_basis >= 0 %}+{% endif %}₹{{ total_gain_cost_basis|indian_currency_int }}">
-        {% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|indian_currency_int }}
+           data-net-investment="{% if total_gain_cost_basis >= 0 %}+{% endif %}{{ total_gain_cost_basis|default:0|round_half_down:3|indian_currency }}"
+           data-cost-basis="{% if total_gain >= 0 %}+{% endif %}{{ total_gain|default:0|round_half_down:3|indian_currency }}">
+        {% if total_gain >= 0 %}+{% endif %}₹{{ total_gain|default:0|round_half_down:3|indian_currency }}
       </div>
       <div class="stat-sub {% if total_gain >= 0 %}text-gain{% else %}text-loss{% endif %}"
-           data-net-investment="{% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%"
-           data-cost-basis="{% if total_gain_cost_basis >= 0 %}+{% endif %}{{ total_gain_pct_cost_basis|floatformat:2 }}%">
-        {% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|floatformat:2 }}%
+           data-net-investment="{% if total_gain_cost_basis >= 0 %}+{% endif %}{{ total_gain_pct_cost_basis|round_half_down:2 }}%"
+           data-cost-basis="{% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|round_half_down:2 }}%">
+        {% if total_gain >= 0 %}+{% endif %}{{ total_gain_pct|round_half_down:2 }}%
       </div>
     </div>
   </div>
@@ -84,7 +84,7 @@
       <div class="stat-label"><i class="bi bi-speedometer2 me-1"></i>Portfolio XIRR</div>
       <div class="stat-value {% if portfolio_xirr %}{% if portfolio_xirr >= 0 %}text-gain{% else %}text-loss{% endif %}{% endif %}">
         {% if portfolio_xirr is not None %}
-          {% if portfolio_xirr >= 0 %}+{% endif %}{{ portfolio_xirr|floatformat:2 }}%
+          {% if portfolio_xirr >= 0 %}+{% endif %}{{ portfolio_xirr|round_half_down:2 }}%
         {% else %}
           <span class="text-muted">—</span>
         {% endif %}
@@ -205,30 +205,30 @@
           <td class="text-end font-mono">
             {% if item.pf.fund.day_change_pct %}
               <span class="{% if item.pf.fund.day_change_pct > 0 %}text-gain{% elif item.pf.fund.day_change_pct < 0 %}text-loss{% else %}text-muted{% endif %}">
-                {% if item.pf.fund.day_change_pct > 0 %}+{% endif %}{{ item.pf.fund.day_change_pct|floatformat:2 }}%
+                {% if item.pf.fund.day_change_pct > 0 %}+{% endif %}{{ item.pf.fund.day_change_pct|round_half_down:2 }}%
               </span>
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}
           </td>
-          <td class="text-end font-mono">{{ item.pf.total_units|floatformat:4 }}</td>
-          <td class="text-end font-mono invested-amount" 
-            data-net-investment="₹{{ item.invested|indian_currency_int }}"
-            data-cost-basis="₹{{ item.cost_basis|indian_currency_int }}">₹{{ item.invested|indian_currency_int }}</td>
-          <td class="text-end font-mono">₹{{ item.current|indian_currency_int }}</td>
+          <td class="text-end font-mono">{{ item.pf.total_units|floatformat:3 }}</td>
+          <td class="text-end font-mono invested-amount"
+            data-net-investment="{{ item.invested|default:0|round_half_down:3|indian_currency }}"
+            data-cost-basis="{{ item.cost_basis|default:0|round_half_down:3|indian_currency }}">₹{{ item.invested|default:0|round_half_down:3|indian_currency }}</td>
+          <td class="text-end font-mono">₹{{ item.current|default:0|round_half_down:3|indian_currency }}</td>
           <td class="text-end">
             <span class="gain-badge {% if item.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}"
-                  data-net-investment="{% if item.gain >= 0 %}+{% endif %}{{ item.gain_pct|floatformat:2 }}%"
-                  data-cost-basis="{% if item.gain_cost_basis >= 0 %}+{% endif %}{{ item.gain_pct_cost_basis|floatformat:2 }}%"
-                  data-net-gain-class="{% if item.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}"
-                  data-cost-gain-class="{% if item.gain_cost_basis >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
-              {% if item.gain >= 0 %}+{% endif %}{{ item.gain_pct|floatformat:2 }}%
+                  data-net-investment="{% if item.gain_cost_basis >= 0 %}+{% endif %}{{ item.gain_pct_cost_basis|round_half_down:2 }}%"
+                  data-cost-basis="{% if item.gain >= 0 %}+{% endif %}{{ item.gain_pct|round_half_down:2 }}%"
+                  data-net-gain-class="{% if item.gain_cost_basis >= 0 %}gain-positive{% else %}gain-negative{% endif %}"
+                  data-cost-gain-class="{% if item.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+              {% if item.gain >= 0 %}+{% endif %}{{ item.gain_pct|round_half_down:2 }}%
             </span>
           </td>
           <td class="text-end">
             {% if item.xirr is not None %}
               <span class="xirr-val {% if item.xirr >= 0 %}text-gain{% else %}text-loss{% endif %}">
-                {% if item.xirr >= 0 %}+{% endif %}{{ item.xirr|floatformat:2 }}%
+                {% if item.xirr >= 0 %}+{% endif %}{{ item.xirr|round_half_down:2 }}%
               </span>
             {% else %}
               <span class="text-muted">—</span>
@@ -366,7 +366,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const value = gainValue.getAttribute(method === 'netInvestment' ? 'data-net-investment' : 'data-cost-basis');
       const percent = gainPercent.getAttribute(method === 'netInvestment' ? 'data-net-investment' : 'data-cost-basis');
       
-      gainValue.textContent = value;
+      gainValue.textContent = value.startsWith('+') ? '₹' + value : '₹' + (value.startsWith('-') ? value : '+' + value);
       gainPercent.textContent = percent;
       
       // Update card styling based on gain/loss
@@ -385,7 +385,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Update Holdings table
     const investedAmounts = document.querySelectorAll('.invested-amount[data-net-investment][data-cost-basis]');
     investedAmounts.forEach(cell => {
-      cell.textContent = cell.getAttribute(method === 'netInvestment' ? 'data-net-investment' : 'data-cost-basis');
+      cell.textContent = '₹' + cell.getAttribute(method === 'netInvestment' ? 'data-net-investment' : 'data-cost-basis');
     });
     
     // Update Gain/Loss percentages in holdings
