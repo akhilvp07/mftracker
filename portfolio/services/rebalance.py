@@ -280,7 +280,7 @@ def generate_rebalance_suggestion(portfolio):
                                         )
                                         
                                         if pf.fund.current_nav:
-                                            action.units = (fund_sell_amount / pf.fund.current_nav).quantize(Decimal('0.0001'), rounding=ROUND_DOWN)
+                                            action.units = (fund_sell_amount / pf.fund.current_nav).quantize(Decimal('0.001'), rounding=ROUND_DOWN)
                                         
                                         actions.append(action)
                                         actual_sell_amount += fund_sell_amount
@@ -358,7 +358,7 @@ def generate_rebalance_suggestion(portfolio):
                                         )
                                         
                                         if pf.fund.current_nav:
-                                            action.units = (fund_sell_amount / pf.fund.current_nav).quantize(Decimal('0.0001'), rounding=ROUND_DOWN)
+                                            action.units = (fund_sell_amount / pf.fund.current_nav).quantize(Decimal('0.001'), rounding=ROUND_DOWN)
                                         
                                         actions.append(action)
                                         actual_sell_amount += fund_sell_amount
@@ -378,7 +378,7 @@ def generate_rebalance_suggestion(portfolio):
                             )
                             
                             if pf.fund.current_nav:
-                                action.units = (fund_sell_amount / pf.fund.current_nav).quantize(Decimal('0.0001'), rounding=ROUND_DOWN)
+                                action.units = (fund_sell_amount / pf.fund.current_nav).quantize(Decimal('0.001'), rounding=ROUND_DOWN)
                             
                             actions.append(action)
                             actual_sell_amount += fund_sell_amount
@@ -421,7 +421,7 @@ def generate_rebalance_suggestion(portfolio):
                         )
                         
                         if best_fund.current_nav:
-                            action.units = (allocated_amount / best_fund.current_nav).quantize(Decimal('0.0001'), rounding=ROUND_DOWN)
+                            action.units = (allocated_amount / best_fund.current_nav).quantize(Decimal('0.001'), rounding=ROUND_DOWN)
                         
                         actions.append(action)
                     else:
@@ -490,7 +490,7 @@ def generate_rebalance_suggestion(portfolio):
                                 )
                                 
                                 if pf.fund.current_nav:
-                                    action.units = (fund_sell_amount / pf.fund.current_nav).quantize(Decimal('0.0001'), rounding=ROUND_DOWN)
+                                    action.units = (fund_sell_amount / pf.fund.current_nav).quantize(Decimal('0.001'), rounding=ROUND_DOWN)
                                 
                                 actions.append(action)
                                 actual_sell_amount += fund_sell_amount
@@ -518,7 +518,7 @@ def generate_rebalance_suggestion(portfolio):
                             )
                             
                             if best_fund.current_nav:
-                                action.units = (allocated_amount / best_fund.current_nav).quantize(Decimal('0.0001'), rounding=ROUND_DOWN)
+                                action.units = (allocated_amount / best_fund.current_nav).quantize(Decimal('0.001'), rounding=ROUND_DOWN)
                             
                             actions.append(action)
         

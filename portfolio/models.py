@@ -118,15 +118,15 @@ class PortfolioFund(models.Model):
             
             for lot in lots:
                 if lot.units > 0:
-                    # Purchase - add to queue with NAV rounded to 2 decimals and units to 2 decimals
+                    # Purchase - add to queue with NAV rounded to 4 decimals and units to 3 decimals
                     purchase_queue.append({
-                        'units': lot.units.quantize(decimal.Decimal('0.01')),
-                        'avg_nav': lot.avg_nav.quantize(decimal.Decimal('0.01')),
+                        'units': lot.units.quantize(decimal.Decimal('0.001')),
+                        'avg_nav': lot.avg_nav.quantize(decimal.Decimal('0.0001')),
                         'purchase_date': lot.purchase_date
                     })
                 else:
                     # Redemption - remove from FIFO queue
-                    units_to_remove = abs(lot.units).quantize(decimal.Decimal('0.01'))
+                    units_to_remove = abs(lot.units).quantize(decimal.Decimal('0.001'))
                     while units_to_remove > 0 and purchase_queue:
                         if purchase_queue[0]['units'] <= units_to_remove:
                             # Remove entire lot
@@ -139,8 +139,8 @@ class PortfolioFund(models.Model):
             
             # Calculate cost of remaining units
             for lot in purchase_queue:
-                # Round each transaction amount to 2 decimals
-                transaction_amount = (lot['units'] * lot['avg_nav']).quantize(decimal.Decimal('0.01'))
+                # Round each transaction amount to 3 decimals for monetary amounts
+                transaction_amount = (lot['units'] * lot['avg_nav']).quantize(decimal.Decimal('0.001'))
                 total_cost += transaction_amount
             
             # Ensure we return a valid Decimal
