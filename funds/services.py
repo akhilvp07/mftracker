@@ -131,7 +131,7 @@ def fetch_fund_nav(fund, fetch_history=False):
 def _try_mfdata(fund, fetch_history):
     """Try fetching from mfdata.in API."""
     from .mfdata_service import fetch_fund_nav as fetch_from_mfdata
-    from datetime import timedelta, timezone, datetime
+    from datetime import timedelta, datetime
     
     # Determine if we should skip cache
     skip_cache = False

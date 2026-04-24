@@ -111,6 +111,10 @@ class PortfolioFund(models.Model):
     def total_cost_basis(self):
         """Traditional cost basis using FIFO method"""
         try:
+            # If there are no redemptions, cost basis equals total invested (quantized to 3 decimals)
+            if not any(lot.units < 0 for lot in self.lots.all()):
+                return self.total_invested.quantize(decimal.Decimal('0.001'))
+            
             # Get all lots sorted by purchase_date (FIFO)
             lots = sorted(self.lots.all(), key=lambda x: x.purchase_date)
             purchase_queue = []  # Queue of (units, avg_nav, purchase_date)
@@ -118,15 +122,15 @@ class PortfolioFund(models.Model):
             
             for lot in lots:
                 if lot.units > 0:
-                    # Purchase - add to queue with NAV rounded to 4 decimals and units to 3 decimals
+                    # Purchase - add to queue with NAV rounded to 4 decimals (units already 3 decimals in DB)
                     purchase_queue.append({
-                        'units': lot.units.quantize(decimal.Decimal('0.001')),
+                        'units': lot.units,
                         'avg_nav': lot.avg_nav.quantize(decimal.Decimal('0.0001')),
                         'purchase_date': lot.purchase_date
                     })
                 else:
-                    # Redemption - remove from FIFO queue
-                    units_to_remove = abs(lot.units).quantize(decimal.Decimal('0.001'))
+                    # Redemption - remove from FIFO queue (units already 3 decimals in DB)
+                    units_to_remove = abs(lot.units)
                     while units_to_remove > 0 and purchase_queue:
                         if purchase_queue[0]['units'] <= units_to_remove:
                             # Remove entire lot
@@ -213,7 +217,7 @@ class PurchaseLot(models.Model):
     ]
     
     portfolio_fund = models.ForeignKey(PortfolioFund, on_delete=models.CASCADE, related_name='lots')
-    units = models.DecimalField(max_digits=16, decimal_places=4)
+    units = models.DecimalField(max_digits=16, decimal_places=3)
     avg_nav = models.DecimalField(max_digits=14, decimal_places=4)
     purchase_date = models.DateField()
     notes = models.CharField(max_length=300, blank=True)
