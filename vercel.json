@@ -84,10 +84,6 @@
   "regions": ["bom1"],
   "crons": [
     {
-      "path": "/health/",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/cron/refresh-nav/",
       "schedule": "0 7 * * *"
     }
