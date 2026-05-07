@@ -37,10 +37,58 @@ def dashboard(request):
     seed_status = SeedStatus.objects.filter(pk=1).first()
 
     # Auto-refresh NAV for funds that need it (check intelligently)
-    from .utils import bulk_check_and_refresh
+    from .utils import bulk_check_and_refresh, should_refresh_nav, get_latest_business_day
     import time
     from datetime import datetime
+
+    # Get latest business day once for all funds (optimization)
+    current_date = timezone.now().date()
+    latest_business_day = get_latest_business_day(current_date)
+
+    # First check if any fund needs refresh (priority check, bypass cache)
+    should_refresh_all = False
+    for pf in holdings:
+        needs_refresh, reason = should_refresh_nav(pf.fund, latest_business_day=latest_business_day)
+        if needs_refresh:
+            should_refresh_all = True
+            logger.info(f"Fund {pf.fund.scheme_name} needs refresh: {reason}")
+            break
     
+    # If any fund needs refresh, bypass cache and refresh immediately
+    # Only use cache if no funds need refresh
+    if not should_refresh_all:
+        last_dashboard_refresh = request.session.get('last_dashboard_refresh', 0)
+        current_time = int(time.time())
+        
+        # Only skip check if last check was less than 5 minutes ago AND no funds need refresh
+        if current_time - last_dashboard_refresh <= 300:  # 5 minutes = 300 seconds
+            should_refresh_all = False
+        else:
+            # Cache expired, check again
+            should_refresh_all = True
+    
+    # If any fund needs refresh, refresh only those that need it
+    if should_refresh_all:
+        # Force refresh by skipping business hours check
+        from funds.services import fetch_fund_nav
+        refreshed_count = 0
+        for pf in holdings:
+            should_refresh, reason = should_refresh_nav(pf.fund, latest_business_day=latest_business_day)
+            if should_refresh:
+                try:
+                    fetch_fund_nav(pf.fund, fetch_history=False)
+                    refreshed_count += 1
+                    logger.info(f"Force refreshed NAV for {pf.fund.scheme_name}: {reason}")
+                except Exception as e:
+                    logger.warning(f"Force refresh failed for {pf.fund.scheme_name}: {e}")
+        
+        if refreshed_count > 0:
+            messages.info(request, f"Auto-refreshed NAV for {refreshed_count} fund{'s' if refreshed_count > 1 else ''}")
+        
+        # Update session timestamp
+        request.session['last_dashboard_refresh'] = int(time.time())
+    
+    # Also run periodic bulk check (existing logic)
     last_check = request.session.get('last_nav_auto_check', 0)
     current_time = int(time.time())
     current_hour = datetime.now().hour
@@ -65,19 +113,45 @@ def dashboard(request):
         # This includes all purchases and redemptions
         invested = pf.total_invested  # This already includes all lots (positive and negative)
         current = pf.current_value
-        gain = current - invested
-        gain_pct = (gain / invested * 100) if invested > 0 else Decimal('0')
+        
+        # Calculate cost basis first (needed for gain percentage calculation)
+        cost_basis = pf.total_cost_basis or Decimal('0')
+        
+        # Calculate gain as total_units * (current_nav - fifo_average_nav) - cost basis method
+        nav = pf.fund.current_nav
+        if nav:
+            gain = pf.total_units * (nav - pf.fifo_average_nav)
+        else:
+            gain = Decimal('0')
+        
+        gain_pct = (gain / cost_basis * 100) if cost_basis > 0 else Decimal('0')
 
         # Get cached XIRR
         xirr_obj = XIRRCache.objects.filter(portfolio_fund=pf).first()
         xirr_val = float(xirr_obj.xirr_value) * 100 if xirr_obj and xirr_obj.xirr_value else None
 
+        # Calculate net investment method gain (toggle option)
+        try:
+            # Calculate gain using net investment: total_units * (current_nav - average_nav)
+            if nav:
+                gain_cost_basis = pf.total_units * (nav - pf.average_nav)
+            else:
+                gain_cost_basis = Decimal('0')
+            gain_pct_cost_basis = (gain_cost_basis / invested * 100) if invested > 0 else Decimal('0')
+        except Exception as e:
+            logger.error(f"Error calculating net investment gain for fund {pf.fund.scheme_name}: {e}")
+            gain_cost_basis = Decimal('0')
+            gain_pct_cost_basis = Decimal('0')
+
         holdings_data.append({
             'pf': pf,
             'invested': invested,
+            'cost_basis': cost_basis,
             'current': current,
             'gain': gain,
             'gain_pct': gain_pct,
+            'gain_cost_basis': gain_cost_basis,
+            'gain_pct_cost_basis': gain_pct_cost_basis,
             'xirr': xirr_val,
             'nav': pf.fund.current_nav or Decimal('0'),
             'day_change_pct': pf.fund.day_change_pct or Decimal('0'),
@@ -102,10 +176,16 @@ def dashboard(request):
     
     # Calculate totals
     total_invested = sum(item['invested'] for item in holdings_data)
+    total_cost_basis = sum(item['cost_basis'] for item in holdings_data if item['cost_basis'])
     total_current = sum(item['current'] for item in holdings_data)
 
-    total_gain = total_current - total_invested
-    total_gain_pct = (total_gain / total_invested * 100) if total_invested > 0 else Decimal('0')
+    # Calculate total gain as sum of individual fund gains
+    total_gain = sum(item['gain'] for item in holdings_data)
+    total_gain_pct = (total_gain / total_cost_basis * 100) if total_cost_basis > 0 else Decimal('0')
+    
+    # Calculate gains for net investment method
+    total_gain_cost_basis = sum(item['gain_cost_basis'] for item in holdings_data)
+    total_gain_pct_cost_basis = (total_gain_cost_basis / total_invested * 100) if total_invested > 0 else Decimal('0')
 
     portfolio_xirr_obj = XIRRCache.objects.filter(portfolio=portfolio, portfolio_fund=None).first()
     portfolio_xirr = None
@@ -132,9 +212,12 @@ def dashboard(request):
         'portfolio': portfolio,
         'holdings_data': holdings_data,
         'total_invested': total_invested,
+        'total_cost_basis': total_cost_basis,
         'total_current': total_current,
         'total_gain': total_gain,
         'total_gain_pct': total_gain_pct,
+        'total_gain_cost_basis': total_gain_cost_basis,
+        'total_gain_pct_cost_basis': total_gain_pct_cost_basis,
         'portfolio_xirr': portfolio_xirr,
         'seed_status': seed_status,
         'now': timezone.now(),
@@ -147,10 +230,7 @@ def dashboard(request):
 def fund_detail(request, pf_id):
     portfolio = get_object_or_404(Portfolio, user=request.user)
     pf = get_object_or_404(PortfolioFund, pk=pf_id, portfolio=portfolio)
-    lots = pf.lots.all()
-    
-    # Refresh fund data to get latest NAV
-    pf.fund.refresh_from_db()
+    lots = pf.lots.all().order_by('-purchase_date')  # Sort by most recent first
     
     # Get period from request (default: 1y)
     period = request.GET.get('period', '1y')
@@ -178,9 +258,9 @@ def fund_detail(request, pf_id):
         last_check = request.session.get(fund_cache_key, 0)
         current_time = int(time.time())
         
-        # Only check if last check was more than 30 minutes ago
+        # Only check if last check was more than 5 minutes ago (consistent with dashboard)
         # And only fetch history if the chart needs it (check if we have enough history)
-        if current_time - last_check > 1800:  # 30 minutes = 1800 seconds
+        if current_time - last_check > 300:  # 5 minutes = 300 seconds
             # Check if we have enough history for the selected period
             from funds.models import NAVHistory
             history_needed = {
@@ -194,7 +274,7 @@ def fund_detail(request, pf_id):
             if days_needed > 0:
                 oldest_date = timezone.now().date() - timedelta(days=days_needed)
                 history_count = NAVHistory.objects.filter(
-                    fund=pf.fund, 
+                    fund=pf.fund,
                     date__gte=oldest_date
                 ).count()
                 
@@ -205,6 +285,19 @@ def fund_detail(request, pf_id):
             
             auto_refresh_if_needed(request, pf.fund, fetch_history=fetch_history)
             request.session[fund_cache_key] = current_time
+    
+    # Refresh fund data from DB after any potential auto-refresh
+    pf.fund.refresh_from_db()
+    
+    # Calculate P&L for each lot (AFTER refresh to use latest NAV)
+    for lot in lots:
+        if pf.fund.current_nav:
+            # P&L = units * (current_nav - avg_nav)
+            lot.pnl = lot.units * (pf.fund.current_nav - lot.avg_nav)
+            lot.current_value = lot.units * pf.fund.current_nav
+        else:
+            lot.current_value = None
+            lot.pnl = None
     
     # Fetch NAV history for chart
     from funds.models import NAVHistory
@@ -383,7 +476,17 @@ def edit_fund(request, pf_id):
             messages.success(request, 'Purchase lot deleted successfully.')
 
     # Get all lots for this fund
-    lots = pf.lots.all().order_by('purchase_date')
+    lots = pf.lots.all().order_by('-purchase_date')  # Sort by most recent first
+    
+    # Calculate P&L for each lot
+    for lot in lots:
+        if pf.fund.current_nav:
+            # P&L = units * (current_nav - avg_nav)
+            lot.pnl = lot.units * (pf.fund.current_nav - lot.avg_nav)
+            lot.current_value = lot.units * pf.fund.current_nav
+        else:
+            lot.current_value = None
+            lot.pnl = None
     
     return render(request, 'portfolio/edit_fund.html', {
         'pf': pf,
@@ -833,7 +936,7 @@ def cas_upload(request):
     password = request.POST.get('password', '').strip()
     
     if not password:
-        return JsonResponse({'error': 'Password (PAN) is required'}, status=400)
+        return JsonResponse({'error': 'Password is required'}, status=400)
     
     # Validate file type
     if not cas_file.name.lower().endswith('.pdf'):
@@ -953,5 +1056,57 @@ def run_migrations_api(request):
         return JsonResponse({
             'success': False,
             'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_POST
+def setup_admin_api(request):
+    """API endpoint to create admin user - for production deployment"""
+    from django.contrib.auth.models import User
+    import os
+    
+    # Get admin credentials from request or use defaults
+    username = request.POST.get('username', os.environ.get('ADMIN_USERNAME', 'admin'))
+    email = request.POST.get('email', os.environ.get('ADMIN_EMAIL', 'admin@example.com'))
+    password = request.POST.get('password', os.environ.get('ADMIN_PASSWORD', 'admin123'))
+    
+    try:
+        # Check if user exists
+        user, created = User.objects.get_or_create(
+            username=username,
+            defaults={
+                'email': email,
+                'is_staff': True,
+                'is_superuser': True,
+            }
+        )
+
+        if created:
+            user.set_password(password)
+            user.save()
+            return JsonResponse({
+                'status': 'success',
+                'message': f'Admin user "{username}" created successfully!',
+                'username': username,
+                'password': password,
+                'warning': 'Please change the password after first login!'
+            })
+        else:
+            # Update existing user
+            user.is_staff = True
+            user.is_superuser = True
+            if password and password != 'admin123':  # Only update if not default
+                user.set_password(password)
+            user.save()
+            return JsonResponse({
+                'status': 'success',
+                'message': f'Admin user "{username}" updated successfully!'
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
         }, status=500)
 

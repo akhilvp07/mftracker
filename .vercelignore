@@ -40,3 +40,20 @@ media/*.xls
 # Keep essential static files
 !static/
 !media/cas/
+
+# Exclude documentation and tests
+*.md
+docs/
+tests/
+test_*.py
+*_test.py
+
+# Exclude cache and temp files
+.cache/
+*.tmp
+node_modules/
+
+# Exclude development environment files
+.env.local
+.env.development
+local_settings.py

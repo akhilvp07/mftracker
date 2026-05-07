@@ -62,22 +62,142 @@ class PortfolioFund(models.Model):
     @property
     def total_invested(self):
         return sum(lot.units * lot.avg_nav for lot in self.lots.all())
+    
+    @property
+    def net_invested(self):
+        """Total amount invested in purchases only (excludes redemptions)"""
+        return sum(lot.units * lot.avg_nav for lot in self.lots.all() if lot.units > 0)
+
+    @property
+    def average_nav(self):
+        """Calculate average NAV after all transactions (purchases and redemptions)"""
+        # Get all lots sorted by date
+        lots = sorted(self.lots.all(), key=lambda x: x.purchase_date)
+        
+        # Track running totals
+        total_units = decimal.Decimal('0')
+        total_value = decimal.Decimal('0')
+        
+        for lot in lots:
+            if lot.units > 0:
+                # Purchase - add units and value
+                total_units += lot.units
+                total_value += lot.units * lot.avg_nav
+            else:
+                # Redemption - remove units at current average
+                # This adjusts the average based on what's actually redeemed
+                redemption_units = abs(lot.units)
+                if total_units > 0:
+                    # Remove units and corresponding value at average NAV
+                    value_to_remove = redemption_units * (total_value / total_units)
+                    total_units -= redemption_units
+                    total_value -= value_to_remove
+        
+        return total_value / total_units if total_units > 0 else decimal.Decimal('0')
+    
+    @property
+    def invested_at_average_nav(self):
+        """Calculate invested amount based on average NAV and current units"""
+        return self.total_units * self.average_nav
+    
+    @property
+    def fifo_average_nav(self):
+        """Calculate average NAV using FIFO cost basis"""
+        if self.total_units > 0 and self.total_cost_basis:
+            return self.total_cost_basis / self.total_units
+        return decimal.Decimal('0')
+    
+    @property
+    def total_cost_basis(self):
+        """Traditional cost basis using FIFO method"""
+        try:
+            # If there are no redemptions, cost basis equals total invested (quantized to 3 decimals)
+            if not any(lot.units < 0 for lot in self.lots.all()):
+                return self.total_invested.quantize(decimal.Decimal('0.001'))
+            
+            # Get all lots sorted by purchase_date (FIFO)
+            lots = sorted(self.lots.all(), key=lambda x: x.purchase_date)
+            purchase_queue = []  # Queue of (units, avg_nav, purchase_date)
+            total_cost = decimal.Decimal('0')
+            
+            for lot in lots:
+                if lot.units > 0:
+                    # Purchase - add to queue with NAV rounded to 4 decimals (units already 3 decimals in DB)
+                    purchase_queue.append({
+                        'units': lot.units,
+                        'avg_nav': lot.avg_nav.quantize(decimal.Decimal('0.0001')),
+                        'purchase_date': lot.purchase_date
+                    })
+                else:
+                    # Redemption - remove from FIFO queue (units already 3 decimals in DB)
+                    units_to_remove = abs(lot.units)
+                    while units_to_remove > 0 and purchase_queue:
+                        if purchase_queue[0]['units'] <= units_to_remove:
+                            # Remove entire lot
+                            units_to_remove -= purchase_queue[0]['units']
+                            purchase_queue.pop(0)
+                        else:
+                            # Partially remove from lot
+                            purchase_queue[0]['units'] -= units_to_remove
+                            units_to_remove = 0
+            
+            # Calculate cost of remaining units
+            for lot in purchase_queue:
+                # Round each transaction amount to 3 decimals for monetary amounts
+                transaction_amount = (lot['units'] * lot['avg_nav']).quantize(decimal.Decimal('0.001'))
+                total_cost += transaction_amount
+            
+            # Ensure we return a valid Decimal
+            return total_cost if total_cost else decimal.Decimal('0')
+        except Exception as e:
+            # Fallback to simple sum if FIFO fails
+            return sum(lot.units * lot.avg_nav for lot in self.lots.all() if lot.units > 0) or decimal.Decimal('0')
 
     @property
     def current_value(self):
         nav = self.fund.current_nav
-        if nav:
-            return self.total_units * nav
-        return decimal.Decimal('0')
+        if nav is None:
+            return decimal.Decimal('0')
+        # Convert to Decimal if it's a float
+        if not isinstance(nav, decimal.Decimal):
+            nav = decimal.Decimal(str(nav))
+        return self.total_units * nav
 
     @property
     def absolute_gain(self):
-        return self.current_value - self.total_invested
+        """Calculate gain as total_units * (current_nav - fifo_average_nav) - cost basis method"""
+        nav = self.fund.current_nav
+        if nav is None:
+            return decimal.Decimal('0')
+        # Convert to Decimal if it's a float
+        if not isinstance(nav, decimal.Decimal):
+            nav = decimal.Decimal(str(nav))
+        # Fund gain = total_units * (current_nav - fifo_average_nav)
+        return self.total_units * (nav - self.fifo_average_nav)
+
+    @property
+    def absolute_gain_cost_basis(self):
+        """Absolute gain using net investment average: units * (current_nav - average_nav)"""
+        nav = self.fund.current_nav
+        if nav is None:
+            return decimal.Decimal('0')
+        # Convert to Decimal if it's a float
+        if not isinstance(nav, decimal.Decimal):
+            nav = decimal.Decimal(str(nav))
+        # P&L using net investment average: total_units * (current_nav - average_nav)
+        return self.total_units * (nav - self.average_nav)
 
     @property
     def gain_pct(self):
+        if self.total_cost_basis > 0:
+            return (self.absolute_gain / self.total_cost_basis) * 100
+        return decimal.Decimal('0')
+
+    @property
+    def gain_pct_cost_basis(self):
+        """Gain percentage using net investment average instead of cost basis"""
         if self.total_invested > 0:
-            return (self.absolute_gain / self.total_invested) * 100
+            return (self.absolute_gain_cost_basis / self.total_invested) * 100
         return decimal.Decimal('0')
 
 
@@ -97,7 +217,7 @@ class PurchaseLot(models.Model):
     ]
     
     portfolio_fund = models.ForeignKey(PortfolioFund, on_delete=models.CASCADE, related_name='lots')
-    units = models.DecimalField(max_digits=16, decimal_places=4)
+    units = models.DecimalField(max_digits=16, decimal_places=3)
     avg_nav = models.DecimalField(max_digits=14, decimal_places=4)
     purchase_date = models.DateField()
     notes = models.CharField(max_length=300, blank=True)

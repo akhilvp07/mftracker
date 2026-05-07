@@ -5,11 +5,23 @@
       "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
-        "maxDuration": 30
+        "maxDuration": 30,
+        "runtime": "python3.12"
+      }
+    },
+    {
+      "src": "api/setup_admin.py",
+      "use": "@vercel/python",
+      "config": {
+        "runtime": "python3.12"
       }
     }
   ],
   "routes": [
+    {
+      "src": "/api/setup-admin",
+      "dest": "/api/setup_admin.py"
+    },
     {
       "src": "/(.*)",
       "dest": "/api/index.py"
@@ -19,12 +31,13 @@
     "DJANGO_SETTINGS_MODULE": "config.settings"
   },
   "installCommand": "pip install -r requirements-vercel.txt",
-  "buildCommand": "python manage.py migrate",
+  "buildCommand": "python manage.py migrate && python manage.py collectstatic --noinput",
   "regions": ["bom1"],
   "crons": [
     {
       "path": "/api/cron/refresh-nav/",
       "schedule": "0 7 * * *"
     }
-  ]
+  ],
+  "framework": null
 }

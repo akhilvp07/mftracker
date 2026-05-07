@@ -50,6 +50,25 @@ def _fetch_with_retry(url, max_retries=SEED_MAX_RETRIES, stream=False, timeout=6
             time.sleep(SEED_RETRY_DELAY)
 
 
+def calculate_day_change_from_history(fund):
+    """Calculate day change using NAV history"""
+    from funds.models import NAVHistory
+    
+    # Get previous day's NAV from history
+    prev_nav = NAVHistory.objects.filter(
+        fund=fund,
+        date__lt=fund.nav_date
+    ).order_by('-date').first()
+    
+    if prev_nav and prev_nav.nav and fund.current_nav:
+        change = fund.current_nav - prev_nav.nav
+        if prev_nav.nav > 0:
+            change_pct = (change / prev_nav.nav) * 100
+            return change, change_pct
+    
+    return None, None
+
+
 def fetch_fund_nav(fund, fetch_history=False):
     """Fetch current NAV (and optionally full history) for a fund using round-robin API retry."""
     from decimal import Decimal
@@ -61,24 +80,58 @@ def fetch_fund_nav(fund, fetch_history=False):
         ('AMFI', _try_amfi)
     ]
     
+    # Track which API was used
+    used_api = None
+    
     # Try each API source
     for api_name, api_func in api_sources:
         try:
             logger.info(f"Trying {api_name} for {fund.scheme_code}")
-            if api_func(fund, fetch_history):
+            result = api_func(fund, fetch_history)
+            if result:
+                used_api = api_name
                 logger.info(f"Successfully fetched NAV from {api_name} for {fund.scheme_code}")
-                return  # Success, no need to try other APIs
+                break  # Success, no need to try other APIs
+            else:
+                logger.warning(f"{api_name} returned False for {fund.scheme_code}")
         except Exception as e:
             logger.warning(f"{api_name} failed for {fund.scheme_code}: {e}")
             continue  # Try next API
     
-    # If all APIs failed
-    logger.error(f"All APIs failed for {fund.scheme_code}")
+    # If history is needed and mfdata.in failed completely, try mfapi.in for history
+    if fetch_history and not used_api:
+        try:
+            logger.info(f"Fetching history from mfapi.in for {fund.scheme_code} (mfdata.in failed)")
+            # Use the same endpoint as _try_mfapi but only for history
+            import time
+            timestamp = int(time.time())
+            url = f"{MFAPI_BASE}/{fund.scheme_code}?_={timestamp}"
+            raw = _fetch_with_retry(url, max_retries=3, timeout=20)
+            data = json.loads(raw)
+            
+            if data.get('data'):
+                _save_nav_history(fund, data['data'])
+                logger.info(f"Fetched {len(data['data'])} history entries for {fund.scheme_name} from mfapi.in")
+        except Exception as e:
+            logger.warning(f"Failed to fetch history from mfapi.in for {fund.scheme_code}: {e}")
+    
+    if not used_api:
+        logger.error(f"All APIs failed for {fund.scheme_code}")
+    else:
+        # Calculate day change if not provided by API or if it's None/0
+        if not fund.day_change or not fund.day_change_pct:
+            change, change_pct = calculate_day_change_from_history(fund)
+            if change is not None and change_pct is not None:
+                fund.day_change = change
+                fund.day_change_pct = change_pct
+                fund.save()
+                logger.info(f"Calculated day change from history for {fund.scheme_name}: {change_pct:.2f}%")
 
 
 def _try_mfdata(fund, fetch_history):
     """Try fetching from mfdata.in API."""
     from .mfdata_service import fetch_fund_nav as fetch_from_mfdata
+    from datetime import timedelta, datetime
     
     # Determine if we should skip cache
     skip_cache = False
@@ -95,8 +148,7 @@ def _try_mfdata(fund, fetch_history):
             skip_cache = True
             logger.info(f"No history exists for {fund.scheme_code}, skipping cache")
         else:
-            from datetime import timedelta
-            now = timezone.now()
+            now = datetime.now(timezone.utc)
             
             # Check if history is stale (more than 1 day old)
             if (now.date() - latest_history.date) > timedelta(days=1):
@@ -112,11 +164,51 @@ def _try_mfdata(fund, fetch_history):
     nav_data = fetch_from_mfdata(fund.scheme_code, skip_cache=skip_cache)
     
     if nav_data:
+        # Parse NAV date first
+        nav_date_str = nav_data.get('nav_date')
+        if nav_date_str:
+            try:
+                nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+                
+                # Check if data is stale (more than 2 days old)
+                today = timezone.now().date()
+                if (today - nav_date).days > 2:
+                    logger.warning(f"Skipping {fund.scheme_name}: mfdata.in data ({nav_date}) is too old (more than 2 days)")
+                    return False  # Try next API
+                
+                # IMPORTANT: Check if existing data is newer
+                if fund.nav_date and nav_date < fund.nav_date:
+                    logger.warning(f"Skipping {fund.scheme_name}: mfdata.in data ({nav_date}) is older than existing ({fund.nav_date})")
+                    
+                    # Fetch history from mfapi.in since mfdata.in has older data
+                    if fetch_history:
+                        try:
+                            logger.info(f"Fetching history from mfapi.in for {fund.scheme_code} (mfdata.in has older data)")
+                            import time
+                            timestamp = int(time.time())
+                            url = f"{MFAPI_BASE}/{fund.scheme_code}?_={timestamp}"
+                            raw = _fetch_with_retry(url, max_retries=3, timeout=20)
+                            data = json.loads(raw)
+                            
+                            if data.get('data'):
+                                _save_nav_history(fund, data['data'])
+                                logger.info(f"Fetched {len(data['data'])} history entries for {fund.scheme_name} from mfapi.in")
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch history from mfapi.in for {fund.scheme_code}: {e}")
+                    
+                    return True  # Return success to prevent trying other APIs
+            except ValueError:
+                logger.warning(f"Invalid date format for {fund.scheme_name}: {nav_date_str}")
+        
         # Update fund with rich data from mfdata.in
         from decimal import Decimal
+        old_nav = fund.current_nav
         fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
-        fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
+        if nav_date_str:
+            fund.nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
         fund.nav_last_updated = timezone.now()
+        
+        logger.info(f"Updated {fund.scheme_name} from mfdata.in: NAV {old_nav} → {fund.current_nav}, Date {fund.nav_date}")
         
         # Update additional fields
         if 'expense_ratio' in nav_data and nav_data['expense_ratio']:
@@ -127,9 +219,57 @@ def _try_mfdata(fund, fetch_history):
         
         if 'day_change' in nav_data and nav_data['day_change'] is not None:
             fund.day_change = Decimal(str(nav_data['day_change']))
+        elif nav_date_str and fund.current_nav:
+            # Calculate day change from NAV history if not provided by API
+            from funds.models import NAVHistory
+            nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+            
+            # Only calculate if history is recent (within last 7 days)
+            # This prevents calculating against stale data
+            recent_history = NAVHistory.objects.filter(
+                fund=fund,
+                date__gte=nav_date - timedelta(days=7)
+            ).exists()
+            
+            if recent_history:
+                # Get most recent previous NAV (handles weekends/holidays)
+                prev_nav = NAVHistory.objects.filter(
+                    fund=fund, 
+                    date__lt=nav_date
+                ).order_by('-date').first()
+                if prev_nav and prev_nav.nav:
+                    fund.day_change = fund.current_nav - prev_nav.nav
+            elif old_nav and old_nav > 0:
+                # Fallback: use old NAV from fund record if history is stale
+                # This is less accurate but better than showing no change
+                logger.info(f"Using old NAV for day change calculation for {fund.scheme_name} (history not recent)")
+                fund.day_change = fund.current_nav - old_nav
         
         if 'day_change_pct' in nav_data and nav_data['day_change_pct'] is not None:
             fund.day_change_pct = Decimal(str(nav_data['day_change_pct']))
+        elif fund.day_change and fund.current_nav:
+            # Calculate percentage if we have the change value
+            # Find previous NAV for percentage calculation
+            from funds.models import NAVHistory
+            nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+            
+            # Only calculate if history is recent (within last 7 days)
+            recent_history = NAVHistory.objects.filter(
+                fund=fund,
+                date__gte=nav_date - timedelta(days=7)
+            ).exists()
+            
+            if recent_history:
+                # Get most recent previous NAV (handles weekends/holidays)
+                prev_nav = NAVHistory.objects.filter(
+                    fund=fund, 
+                    date__lt=nav_date
+                ).order_by('-date').first()
+                if prev_nav and prev_nav.nav > 0:
+                    fund.day_change_pct = (fund.day_change / prev_nav.nav) * 100
+            elif old_nav and old_nav > 0:
+                # Fallback: use old NAV from fund record if history is stale
+                fund.day_change_pct = (fund.day_change / old_nav) * 100
         
         if 'morningstar' in nav_data and nav_data['morningstar'] is not None:
             fund.morningstar_rating = nav_data['morningstar']
@@ -197,7 +337,7 @@ def _try_mfapi(fund, fetch_history):
         nav_data = data.get('data', [])
         if nav_data:
             latest = nav_data[0]
-            nav_val = float(latest['nav'])
+            nav_val = Decimal(str(latest['nav']))
             date_str = latest['date']
             
             # Parse date
@@ -210,20 +350,34 @@ def _try_mfapi(fund, fetch_history):
             else:
                 nav_date = date.today()
             
+            # IMPORTANT: Check if existing data is newer
+            if fund.nav_date and nav_date < fund.nav_date:
+                logger.warning(f"Skipping {fund.scheme_name}: mfapi.in data ({nav_date}) is older than existing ({fund.nav_date})")
+                return True  # Return success to prevent trying other APIs
+            
+            old_nav = fund.current_nav
             fund.current_nav = nav_val
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
+            
+            # mfapi.in doesn't provide day change, so calculate from history
+            change, change_pct = calculate_day_change_from_history(fund)
+            if change is not None and change_pct is not None:
+                fund.day_change = change
+                fund.day_change_pct = change_pct
+            
             fund.save()
+            
+            logger.info(f"Updated {fund.scheme_name} from mfapi.in: NAV {old_nav} → {nav_val}, Date {nav_date}")
             
             # Trigger intelligent monitoring for NAV changes
             try:
                 from alerts.intelligent_monitor import trigger_nav_monitoring
                 # Run in background to avoid blocking
-                from django.core.cache import cache
-                cache_key = f"nav_monitor_trigger:{fund.scheme_code}"
-                if not cache.get(cache_key):  # Avoid duplicate triggers
+                monitor_cache_key = f"nav_monitor_trigger:{fund.scheme_code}"
+                if not cache.get(monitor_cache_key):  # Avoid duplicate triggers
                     trigger_nav_monitoring(fund)
-                    cache.set(cache_key, True, timeout=300)  # 5 minute cooldown
+                    cache.set(monitor_cache_key, True, timeout=300)  # 5 minute cooldown
             except Exception as e:
                 logger.warning(f"Failed to trigger NAV monitoring: {e}")
             
@@ -292,10 +446,20 @@ def _fetch_nav_from_amfi_fallback(fund):
             # Parse date (DD-MMM-YYYY format)
             nav_date = datetime.strptime(date_str, '%d-%b-%Y').date()
             
+            # Store old NAV before updating
+            old_nav = fund.current_nav
+            
             # Update fund
             fund.current_nav = nav_val
             fund.nav_date = nav_date
             fund.nav_last_updated = timezone.now()
+            
+            # AMFI doesn't provide day change, so calculate from history
+            change, change_pct = calculate_day_change_from_history(fund)
+            if change is not None and change_pct is not None:
+                fund.day_change = change
+                fund.day_change_pct = change_pct
+            
             fund.save()
             
             # Cache the NAV data for 4 hours (even from AMFI)
@@ -473,9 +637,10 @@ def _save_nav_history(fund, nav_data):
 def refresh_all_nav_bulk(user_portfolio):
     """
     Refresh NAV for all funds using mfdata.in bulk endpoint.
-    Falls back to individual refresh if bulk fails.
+    Falls back to mfapi.in for individual funds if mfdata.in data is older than 1 day.
     """
     from portfolio.models import PortfolioFund
+    from datetime import date
     
     logger.info(f"Starting bulk NAV refresh for portfolio {user_portfolio.name}")
     
@@ -487,6 +652,10 @@ def refresh_all_nav_bulk(user_portfolio):
         logger.warning("No funds found in portfolio")
         return
     
+    # Track funds that need mfapi.in fallback
+    funds_needing_mfapi = []
+    mfapi_updated_count = 0
+    
     # Try bulk refresh first
     try:
         from .mfdata_service import fetch_bulk_nav
@@ -495,6 +664,9 @@ def refresh_all_nav_bulk(user_portfolio):
         if bulk_nav_data:
             logger.info(f"Successfully fetched bulk NAV data for {len(bulk_nav_data)} funds")
             
+            # Get today's date for comparison
+            today = date.today()
+            
             # Update each fund
             updated_count = 0
             for pf in holdings:
@@ -502,10 +674,33 @@ def refresh_all_nav_bulk(user_portfolio):
                 if code in bulk_nav_data:
                     nav_data = bulk_nav_data[code]
                     
+                    # Parse NAV date
+                    nav_date_str = nav_data.get('nav_date')
+                    nav_date = None
+                    if nav_date_str:
+                        try:
+                            nav_date = datetime.strptime(nav_date_str, '%Y-%m-%d').date()
+                            
+                            # IMPORTANT: Check if existing data is newer
+                            if pf.fund.nav_date and nav_date < pf.fund.nav_date:
+                                logger.warning(f"Skipping {pf.fund.scheme_name}: mfdata.in data ({nav_date}) is older than existing ({pf.fund.nav_date})")
+                                continue
+                            
+                            # Check if NAV data is stale considering weekends
+                            if is_nav_data_stale(nav_date, today):
+                                days_old = (today - nav_date).days
+                                logger.info(f"mfdata.in data for {pf.fund.scheme_name} is {days_old} days old ({nav_date}), will try mfapi.in")
+                                funds_needing_mfapi.append(pf)
+                                continue
+                        except ValueError:
+                            logger.warning(f"Invalid date format for {pf.fund.scheme_name}: {nav_date_str}")
+                    
                     # Update fund with rich data
                     from decimal import Decimal
+                    old_nav = pf.fund.current_nav
                     pf.fund.current_nav = Decimal(str(nav_data.get('nav', 0)))
-                    pf.fund.nav_date = datetime.strptime(nav_data.get('nav_date'), '%Y-%m-%d').date()
+                    if nav_date:
+                        pf.fund.nav_date = nav_date
                     pf.fund.nav_last_updated = timezone.now()
                     
                     # Update all available fields from mfdata.in
@@ -546,7 +741,21 @@ def refresh_all_nav_bulk(user_portfolio):
                     
                     logger.info(f"Updated {pf.fund.scheme_name}: NAV={pf.fund.current_nav} ({pf.fund.day_change_pct}%) | ER={pf.fund.expense_ratio}% | Rating={pf.fund.morningstar_rating}")
             
-            logger.info(f"Bulk NAV refresh completed: {updated_count}/{len(holdings)} funds updated")
+            logger.info(f"Bulk NAV refresh completed: {updated_count}/{len(holdings)} funds updated from mfdata.in")
+            
+            # Now try mfapi.in for funds with old data
+            if funds_needing_mfapi:
+                logger.info(f"Attempting to update {len(funds_needing_mfapi)} funds from mfapi.in due to stale mfdata.in data")
+                for pf in funds_needing_mfapi:
+                    try:
+                        if _try_mfapi_fallback(pf.fund):
+                            mfapi_updated_count += 1
+                            logger.info(f"Successfully updated {pf.fund.scheme_name} from mfapi.in")
+                    except Exception as e:
+                        logger.error(f"mfapi.in fallback failed for {pf.fund.scheme_code}: {e}")
+            
+            total_updated = updated_count + mfapi_updated_count
+            logger.info(f"Total NAV refresh completed: {total_updated}/{len(holdings)} funds updated (mfdata.in: {updated_count}, mfapi.in: {mfapi_updated_count})")
             return
         
     except Exception as e:
@@ -559,6 +768,87 @@ def refresh_all_nav_bulk(user_portfolio):
                 fetch_fund_nav(pf.fund, fetch_history=False)
             except Exception as e:
                 logger.error(f"Individual refresh failed for {pf.fund.scheme_code}: {e}")
+
+
+def is_nav_data_stale(nav_date, current_date=None):
+    """
+    Check if NAV data is stale considering weekends.
+    Returns True if data is considered stale and needs refresh.
+    """
+    from datetime import date
+    
+    if current_date is None:
+        current_date = date.today()
+    
+    days_old = (current_date - nav_date).days
+    weekday_today = current_date.weekday()  # 0=Monday, 6=Sunday
+    
+    # If same day or 1 day old, not stale (latest available)
+    if days_old <= 1:
+        return False
+    
+    # Weekend consideration: Monday with Friday NAV (3 days old) - Not stale
+    if weekday_today == 0 and days_old <= 3:
+        return False
+    
+    # Weekend consideration: Sunday with Friday NAV (2 days old) - Not stale
+    if weekday_today == 6 and days_old <= 2:
+        return False
+    
+    # For all other cases, if more than 1 day old, consider stale
+    return days_old > 1
+
+
+def _try_mfapi_fallback(fund, fetch_history=False):
+    """Try fetching latest NAV from mfapi.in for a single fund"""
+    import requests
+    import json
+    from decimal import Decimal
+    
+    try:
+        url = f"https://api.mfapi.in/mf/{fund.scheme_code}/latest"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        if data.get('status') == 'SUCCESS' and data.get('data'):
+            nav_info = data['data'][0]  # Latest NAV is first element
+            
+            # Parse date (format: "26-10-2024")
+            nav_date = datetime.strptime(nav_info['date'], '%d-%m-%Y').date()
+            
+            # IMPORTANT: Only update if the new NAV date is newer than existing
+            if fund.nav_date and nav_date <= fund.nav_date:
+                logger.warning(f"mfapi.in data for {fund.scheme_name} is older ({nav_date}) than existing ({fund.nav_date}), skipping update")
+                return False
+            
+            # Update fund with NAV from mfapi.in
+            old_nav = fund.current_nav
+            fund.current_nav = Decimal(str(nav_info['nav']))
+            fund.nav_date = nav_date
+            fund.nav_last_updated = timezone.now()
+            
+            fund.save()
+            
+            logger.info(f"Updated {fund.scheme_name} from mfapi.in: NAV {old_nav} → {fund.current_nav}, Date {fund.nav_date}")
+            
+            # mfapi.in doesn't provide history, so try to fetch history from mfdata.in if requested
+            if fetch_history:
+                try:
+                    from .mfdata_service import fetch_nav_history
+                    history_data = fetch_nav_history(fund.scheme_code)
+                    if history_data:
+                        logger.info(f"Fetched {len(history_data)} history entries for {fund.scheme_name} from mfdata.in")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch history for {fund.scheme_name}: {e}")
+            
+            return True
+            
+    except Exception as e:
+        logger.error(f"Failed to fetch from mfapi.in for {fund.scheme_code}: {e}")
+    
+    return False
 
 
 def refresh_all_nav(user_portfolio):

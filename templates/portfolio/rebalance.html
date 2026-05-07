@@ -15,27 +15,27 @@
     <div class="mft-card">
       <div class="mft-card-header">
         <h5 class="mft-card-title">Current Allocation</h5>
-        <span class="small text-secondary">₹{{ total_value|indian_currency_int }}</span>
+        <span class="small text-secondary">₹{{ total_value|default:0|round_half_down:3|indian_currency }}</span>
       </div>
       <div class="p-3">
         <div class="row g-2 text-center mb-2">
           <div class="col-4">
             <div class="small text-secondary">Equity</div>
-            <div class="h4 mb-0">{{ current_allocation.equity|floatformat:1 }}%</div>
+            <div class="h4 mb-0">{{ current_allocation.equity|round_half_down:1 }}%</div>
           </div>
           <div class="col-4">
             <div class="small text-secondary">Debt</div>
-            <div class="h4 mb-0">{{ current_allocation.debt|floatformat:1 }}%</div>
+            <div class="h4 mb-0">{{ current_allocation.debt|round_half_down:1 }}%</div>
           </div>
           <div class="col-4">
             <div class="small text-secondary">Gold</div>
-            <div class="h4 mb-0">{{ current_allocation.gold|floatformat:1 }}%</div>
+            <div class="h4 mb-0">{{ current_allocation.gold|round_half_down:1 }}%</div>
           </div>
         </div>
         <div class="progress" style="height: 8px;">
-          <div class="progress-bar bg-success" style="width: {{ current_allocation.equity|floatformat:0 }}%"></div>
-          <div class="progress-bar bg-warning" style="width: {{ current_allocation.debt|floatformat:0 }}%"></div>
-          <div class="progress-bar bg-info" style="width: {{ current_allocation.gold|floatformat:0 }}%"></div>
+          <div class="progress-bar bg-success" style="width: {{ current_allocation.equity|round_half_down:0 }}%"></div>
+          <div class="progress-bar bg-warning" style="width: {{ current_allocation.debt|round_half_down:0 }}%"></div>
+          <div class="progress-bar bg-info" style="width: {{ current_allocation.gold|round_half_down:0 }}%"></div>
         </div>
       </div>
     </div>
@@ -45,27 +45,27 @@
     <div class="mft-card">
       <div class="mft-card-header">
         <h5 class="mft-card-title">Target Allocation</h5>
-        <span class="small text-secondary">±{{ asset_allocation.rebalance_threshold|floatformat:0 }}% threshold</span>
+        <span class="small text-secondary">±{{ asset_allocation.rebalance_threshold|round_half_down:0 }}% threshold</span>
       </div>
       <div class="p-3">
         <div class="row g-2 text-center mb-2">
           <div class="col-4">
             <div class="small text-secondary">Equity</div>
-            <div class="h4 mb-0">{{ asset_allocation.equity_percentage|floatformat:0 }}%</div>
+            <div class="h4 mb-0">{{ asset_allocation.equity_percentage|round_half_down:0 }}%</div>
           </div>
           <div class="col-4">
             <div class="small text-secondary">Debt</div>
-            <div class="h4 mb-0">{{ asset_allocation.debt_percentage|floatformat:0 }}%</div>
+            <div class="h4 mb-0">{{ asset_allocation.debt_percentage|round_half_down:0 }}%</div>
           </div>
           <div class="col-4">
             <div class="small text-secondary">Gold</div>
-            <div class="h4 mb-0">{{ asset_allocation.gold_percentage|floatformat:0 }}%</div>
+            <div class="h4 mb-0">{{ asset_allocation.gold_percentage|round_half_down:0 }}%</div>
           </div>
         </div>
         <div class="progress" style="height: 8px;">
-          <div class="progress-bar bg-success" style="width: {{ asset_allocation.equity_percentage|floatformat:0 }}%"></div>
-          <div class="progress-bar bg-warning" style="width: {{ asset_allocation.debt_percentage|floatformat:0 }}%"></div>
-          <div class="progress-bar bg-info" style="width: {{ asset_allocation.gold_percentage|floatformat:0 }}%"></div>
+          <div class="progress-bar bg-success" style="width: {{ asset_allocation.equity_percentage|round_half_down:0 }}%"></div>
+          <div class="progress-bar bg-warning" style="width: {{ asset_allocation.debt_percentage|round_half_down:0 }}%"></div>
+          <div class="progress-bar bg-info" style="width: {{ asset_allocation.gold_percentage|round_half_down:0 }}%"></div>
         </div>
       </div>
     </div>
@@ -181,8 +181,8 @@
               {% endif %}
               {% endwith %}
             </td>
-            <td class="font-mono">₹{{ pf.current_value|indian_currency_int }}</td>
-            <td class="font-mono">{{ pf.percentage_of_portfolio|floatformat:2 }}%</td>
+            <td class="font-mono">₹{{ pf.current_value|default:0|round_half_down:3|indian_currency }}</td>
+            <td class="font-mono">{{ pf.percentage_of_portfolio|round_half_down:2 }}%</td>
             <td class="font-mono">{{ pf.total_units|floatformat:3 }}</td>
           </tr>
           {% endfor %}
@@ -225,7 +225,7 @@
           </div>
           <div>
             <div class="rebalance-label">Total to Sell</div>
-            <div class="rebalance-amount">₹{{ suggestion_summary.total_sell_amount|indian_currency_int }}</div>
+            <div class="rebalance-amount">₹{{ suggestion_summary.total_sell_amount|default:0|round_half_down:2|indian_currency }}</div>
           </div>
         </div>
       </div>
@@ -236,7 +236,7 @@
           </div>
           <div>
             <div class="rebalance-label">Total to Buy</div>
-            <div class="rebalance-amount">₹{{ suggestion_summary.total_buy_amount|indian_currency_int }}</div>
+            <div class="rebalance-amount">₹{{ suggestion_summary.total_buy_amount|default:0|round_half_down:2|indian_currency }}</div>
           </div>
         </div>
       </div>
@@ -248,7 +248,7 @@
           <div>
             <div class="rebalance-label">Net Cash Flow</div>
             <div class="rebalance-amount {% if suggestion_summary.net_amount > 0 %}text-gain{% elif suggestion_summary.net_amount < 0 %}text-loss{% endif %}">
-              {% if suggestion_summary.net_amount > 0 %}+{% endif %}₹{{ suggestion_summary.net_amount|indian_currency_int }}
+              {% if suggestion_summary.net_amount > 0 %}+{% endif %}₹{{ suggestion_summary.net_amount|default:0|round_half_down:2|indian_currency }}
             </div>
           </div>
         </div>
@@ -273,7 +273,7 @@
             {% for action in suggestion_summary.buy_actions %}
             <tr>
               <td>{{ action.fund.scheme_name|truncatechars:50 }}</td>
-              <td class="font-mono text-gain">₹{{ action.amount|indian_currency_int }}</td>
+              <td class="font-mono text-gain">₹{{ action.amount|default:0|round_half_down:3|indian_currency }}</td>
               <td class="font-mono">{{ action.units|floatformat:3 }}</td>
               <td><small class="text-secondary">{{ action.reason }}</small></td>
             </tr>
@@ -301,7 +301,7 @@
             {% for action in suggestion_summary.sell_actions %}
             <tr>
               <td>{{ action.fund.scheme_name|truncatechars:50 }}</td>
-              <td class="font-mono text-loss">₹{{ action.amount|indian_currency_int }}</td>
+              <td class="font-mono text-loss">₹{{ action.amount|default:0|round_half_down:3|indian_currency }}</td>
               <td class="font-mono">{{ action.units|floatformat:3 }}</td>
               <td><small class="text-secondary">{{ action.reason }}</small></td>
             </tr>

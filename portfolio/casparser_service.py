@@ -123,7 +123,7 @@ class CASParserService:
                 logger.info(f"Successfully processed CAS import {cas_import.id} for user {user.username}")
                 
             except IncorrectPasswordError:
-                error_msg = "Incorrect password. Please check your PAN number."
+                error_msg = "Incorrect password. Please check the password you entered."
                 logger.error(f"CAS parsing error: {error_msg}")
                 cas_import.mark_completed(success=False, error_message=error_msg)
                 
@@ -133,7 +133,12 @@ class CASParserService:
                 cas_import.mark_completed(success=False, error_message=error_msg)
                 
             except Exception as e:
-                error_msg = f"Processing failed: {str(e)}"
+                # Check for specific validation errors that indicate wrong password
+                error_str = str(e)
+                if "validation errors for PartialCASData" in error_str and "investor_info" in error_str:
+                    error_msg = "Incorrect password. The CAS PDF could not be opened with the provided password. Please check your password and try again."
+                else:
+                    error_msg = f"Processing failed: {error_str}"
                 logger.error(f"CAS processing error: {error_msg}")
                 cas_import.mark_completed(success=False, error_message=error_msg)
             
@@ -188,7 +193,7 @@ class CASParserService:
                 logger.info(f"Successfully processed CAS import {cas_import.id} for user {user.username}")
                 
             except IncorrectPasswordError:
-                error_msg = "Incorrect password. Please check your PAN number."
+                error_msg = "Incorrect password. Please check the password you entered."
                 logger.error(f"CAS parsing error: {error_msg}")
                 cas_import.mark_completed(success=False, error_message=error_msg)
                 
@@ -198,7 +203,12 @@ class CASParserService:
                 cas_import.mark_completed(success=False, error_message=error_msg)
                 
             except Exception as e:
-                error_msg = f"Processing failed: {str(e)}"
+                # Check for specific validation errors that indicate wrong password
+                error_str = str(e)
+                if "validation errors for PartialCASData" in error_str and "investor_info" in error_str:
+                    error_msg = "Incorrect password. The CAS PDF could not be opened with the provided password. Please check your password and try again."
+                else:
+                    error_msg = f"Processing failed: {error_str}"
                 logger.error(f"CAS processing error: {error_msg}")
                 cas_import.mark_completed(success=False, error_message=error_msg)
             
@@ -451,6 +461,22 @@ class CASParserService:
             # Skip transactions with 0 units (invalid data) - don't create any records
             if units == 0:
                 logger.warning(f"Skipping transaction with 0 units for {fund.scheme_name} on {tx_date}")
+                cas_import.skipped_transactions += 1
+                cas_import.save(update_fields=['skipped_transactions'])
+                return
+            
+            # Check for duplicate transaction
+            existing_tx = CASTransaction.objects.filter(
+                fund=fund,
+                transaction_type=tx_type,
+                transaction_date=tx_date,
+                units=units,
+                nav=nav,
+                amount=amount
+            ).first()
+            
+            if existing_tx:
+                logger.info(f"Skipping duplicate transaction for {fund.scheme_name} on {tx_date}: {units} units @ {nav}")
                 cas_import.skipped_transactions += 1
                 cas_import.save(update_fields=['skipped_transactions'])
                 return

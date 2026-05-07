@@ -36,26 +36,30 @@
   <div class="col-6 col-lg-3">
     <div class="stat-card">
       <div class="stat-label">Total Units</div>
-      <div class="stat-value font-mono">{{ pf.total_units|floatformat:4 }}</div>
+      <div class="stat-value font-mono">{{ pf.total_units|floatformat:3 }}</div>
       <div class="stat-sub">across {{ lots|length }} lot{{ lots|length|pluralize }}</div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
     <div class="stat-card {% if pf.absolute_gain >= 0 %}stat-card-gain{% else %}stat-card-loss{% endif %}">
       <div class="stat-label">Gain / Loss</div>
-      <div class="stat-value {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %}">
-        {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|indian_currency_int }}
+      <div class="stat-value {% if pf.absolute_gain >= 0 %}text-gain{% else %}text-loss{% endif %} gain-amount"
+           data-net-investment="{% if pf.absolute_gain_cost_basis >= 0 %}+{% endif %}{{ pf.absolute_gain_cost_basis|default:pf.absolute_gain|round_half_down:3|indian_currency }}"
+           data-cost-basis="{% if pf.absolute_gain >= 0 %}+{% endif %}{{ pf.absolute_gain|default:0|round_half_down:3|indian_currency }}">
+        {% if pf.absolute_gain >= 0 %}+{% endif %}₹{{ pf.absolute_gain|default:0|round_half_down:3|indian_currency }}
       </div>
-      <div class="stat-sub {% if pf.gain_pct >= 0 %}text-gain{% else %}text-loss{% endif %}">
-        {{ pf.gain_pct|floatformat:2 }}%
+      <div class="stat-sub {% if pf.gain_pct >= 0 %}text-gain{% else %}text-loss{% endif %} gain-pct"
+           data-net-investment="{{ pf.gain_pct_cost_basis|default:pf.gain_pct|round_half_down:2 }}%"
+           data-cost-basis="{{ pf.gain_pct|round_half_down:2 }}%">
+        {{ pf.gain_pct|round_half_down:2 }}%
       </div>
     </div>
   </div>
   <div class="col-6 col-lg-3">
     <div class="stat-card">
       <div class="stat-label">Total Invested</div>
-      <div class="stat-value font-mono">₹{{ pf.total_invested|indian_currency_int }}</div>
-      <div class="stat-sub">Current Value: ₹{{ pf.current_value|indian_currency_int }}</div>
+      <div class="stat-value font-mono">₹{{ pf.total_invested|default:0|round_half_down:3|indian_currency }}</div>
+      <div class="stat-sub">Current Value: ₹{{ pf.current_value|default:0|round_half_down:3|indian_currency }}</div>
     </div>
   </div>
 </div>
@@ -112,7 +116,7 @@
           <th class="text-end">Units</th>
           <th class="text-end">Avg NAV</th>
           <th class="text-end">Invested</th>
-          <th class="text-end">Current Value</th>
+          <th class="text-end">P&L</th>
           <th>Notes</th>
           <th width="120">Actions</th>
         </tr>
@@ -121,12 +125,14 @@
         {% for lot in lots %}
         <tr>
           <td class="font-mono">{{ lot.purchase_date }}</td>
-          <td class="text-end font-mono">{{ lot.units|floatformat:4 }}</td>
-          <td class="text-end font-mono">₹{{ lot.avg_nav|floatformat:4 }}</td>
-          <td class="text-end font-mono">₹{{ lot.invested_amount|indian_currency_int }}</td>
+          <td class="text-end font-mono">{{ lot.units|floatformat:3 }}</td>
+          <td class="text-end font-mono">₹{{ lot.avg_nav|round_half_down:4 }}</td>
+          <td class="text-end font-mono">₹{{ lot.invested_amount|default:0|round_half_down:3|indian_currency }}</td>
           <td class="text-end font-mono">
-            {% if pf.fund.current_nav %}
-              ₹{% widthratio lot.units 1 pf.fund.current_nav %}
+            {% if lot.pnl is not None %}
+              <span class="{% if lot.pnl >= 0 %}text-gain{% else %}text-loss{% endif %}">
+                {% if lot.pnl >= 0 %}+{% endif %}₹{{ lot.pnl|round_half_down:3|indian_currency }}
+              </span>
             {% else %}—{% endif %}
           </td>
           <td class="text-muted small">{{ lot.notes|default:"" }}</td>
@@ -257,6 +263,100 @@ document.addEventListener('DOMContentLoaded', function() {
       
       modal.show();
     });
+  });
+});
+
+// Sync invested amount with dashboard toggle
+document.addEventListener('DOMContentLoaded', function() {
+  const investedAmounts = document.querySelectorAll('.invested-amount');
+  
+  // Load saved investment basis
+  const savedMethod = localStorage.getItem('investmentMethod') || 'netInvestment';
+  let useCostBasis = savedMethod === 'costBasis';
+  
+  function updateInvestmentDisplay() {
+    // Use requestAnimationFrame to optimize DOM updates
+    requestAnimationFrame(() => {
+      investedAmounts.forEach(el => {
+        if (useCostBasis) {
+          el.textContent = '₹' + el.dataset.costBasis;
+        } else {
+          el.textContent = '₹' + el.dataset.netInvestment;
+        }
+      });
+      
+      // Update Gain / Loss amounts
+      const gainAmounts = document.querySelectorAll('.gain-amount');
+      gainAmounts.forEach(el => {
+        if (useCostBasis) {
+          el.textContent = el.dataset.costBasis.startsWith('+') ? '₹' + el.dataset.costBasis : '₹' + (el.dataset.costBasis.startsWith('-') ? el.dataset.costBasis : '+' + el.dataset.costBasis);
+        } else {
+          el.textContent = el.dataset.netInvestment.startsWith('+') ? '₹' + el.dataset.netInvestment : '₹' + (el.dataset.netInvestment.startsWith('-') ? el.dataset.netInvestment : '+' + el.dataset.netInvestment);
+        }
+        // Update color based on gain/loss
+        const value = parseFloat(el.textContent.replace(/[₹+,]/g, ''));
+        el.classList.remove('text-gain', 'text-loss');
+        if (value >= 0) {
+          el.classList.add('text-gain');
+        } else {
+          el.classList.add('text-loss');
+        }
+        // Update parent stat-card color
+        const statCard = el.closest('.stat-card');
+        if (statCard) {
+          statCard.classList.remove('stat-card-gain', 'stat-card-loss');
+          if (value >= 0) {
+            statCard.classList.add('stat-card-gain');
+          } else {
+            statCard.classList.add('stat-card-loss');
+          }
+        }
+      });
+      
+      // Update Gain / Loss percentages
+      const gainPcts = document.querySelectorAll('.gain-pct');
+      gainPcts.forEach(el => {
+        if (useCostBasis) {
+          el.textContent = el.dataset.costBasis;
+        } else {
+          el.textContent = el.dataset.netInvestment;
+        }
+        // Update color based on gain/loss
+        const value = parseFloat(el.textContent.replace(/%/g, ''));
+        el.classList.remove('text-gain', 'text-loss');
+        if (value >= 0) {
+          el.classList.add('text-gain');
+        } else {
+          el.classList.add('text-loss');
+        }
+      });
+    });
+  }
+  
+  // Initial call to set the correct display on page load
+  updateInvestmentDisplay();
+  
+  // Listen for changes from dashboard
+  window.addEventListener('storage', function(e) {
+    if (e.key === 'investmentMethod') {
+      const savedMethod = localStorage.getItem('investmentMethod') || 'netInvestment';
+      useCostBasis = savedMethod === 'costBasis';
+      updateInvestmentDisplay();
+    }
+  });
+  
+  // Listen for visibility change to sync when tab becomes active
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+      // Use a delay to avoid forced reflow during tab switch
+      setTimeout(function() {
+        const savedMethod = localStorage.getItem('investmentMethod') || 'netInvestment';
+        if (savedMethod !== (useCostBasis ? 'costBasis' : 'netInvestment')) {
+          useCostBasis = savedMethod === 'costBasis';
+          updateInvestmentDisplay();
+        }
+      }, 500);
+    }
   });
 });
 </script>

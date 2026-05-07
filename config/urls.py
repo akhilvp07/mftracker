@@ -20,4 +20,5 @@ urlpatterns = [
     path('funds/', include('funds.urls')),
     path('alerts/', include('alerts.urls')),
     path('factsheets/', include('factsheets.urls')),
+    path('api/migrate', include('api.urls')),
 ]
