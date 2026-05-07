@@ -23,6 +23,10 @@
       "dest": "/api/setup_admin.py"
     },
     {
+      "src": "/api/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
       "src": "/static/(.*)",
       "dest": "/static/$1"
     },
@@ -41,6 +45,9 @@
     {
       "src": "/",
       "dest": "/public/index.html"
+    },
+    {
+      "handle": "filesystem"
     },
     {
       "src": "/(.*)",
