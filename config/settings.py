@@ -92,13 +92,6 @@ if not DEBUG:
 if 'DATABASE_URL' in os.environ:
     DATABASES['default'] = dj_database_url.parse(os.environ['DATABASE_URL'])
     DATABASES['default']['CONN_MAX_AGE'] = 60
-    
-    # Use gevent connection pooling for serverless environments
-    DATABASES['default']['ENGINE'] = 'django_db_geventpool.backends.postgresql_psycopg2'
-    DATABASES['default']['OPTIONS'] = {
-        'MAX_CONNS': 20,
-        'REUSE_CONNS': True,
-    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
