@@ -231,8 +231,9 @@ def bulk_check_and_refresh(request, portfolio, fetch_history=False):
         if auto_refresh_if_needed(request, fund, silent=True, fetch_history=fetch_history, latest_business_day=latest_business_day):
             refreshed_count += 1
     
-    # Show single consolidated message
-    if refreshed_count > 0:
+    # Show single consolidated message (request may be None when called from a
+    # background thread, e.g. from dashboard()'s async refresh — skip in that case)
+    if refreshed_count > 0 and request is not None:
         messages.info(
             request,
             f"Auto-refreshed NAV for {refreshed_count} fund{'s' if refreshed_count > 1 else ''}"

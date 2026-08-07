@@ -518,6 +518,7 @@
 {% block extra_js %}
 {{ nav_dates|json_script:"nav_dates" }}
 {{ nav_values|json_script:"nav_values" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 const navDates = JSON.parse(document.getElementById('nav_dates').textContent);
 const navValues = JSON.parse(document.getElementById('nav_values').textContent);
