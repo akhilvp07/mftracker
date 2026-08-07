@@ -177,15 +177,10 @@ class PortfolioFund(models.Model):
 
     @property
     def absolute_gain_cost_basis(self):
-        """Absolute gain using net investment average: units * (current_nav - average_nav)"""
-        nav = self.fund.current_nav
-        if nav is None:
+        """Absolute gain using net investment basis: current value minus net amount invested."""
+        if self.fund.current_nav is None:
             return decimal.Decimal('0')
-        # Convert to Decimal if it's a float
-        if not isinstance(nav, decimal.Decimal):
-            nav = decimal.Decimal(str(nav))
-        # P&L using net investment average: total_units * (current_nav - average_nav)
-        return self.total_units * (nav - self.average_nav)
+        return self.current_value - self.total_invested
 
     @property
     def gain_pct(self):
