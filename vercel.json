@@ -19,6 +19,10 @@
   ],
   "routes": [
     {
+      "src": "/_vercel/speed-insights/(.*)",
+      "dest": "/_vercel/speed-insights/$1"
+    },
+    {
       "src": "/api/setup-admin",
       "dest": "/api/setup_admin.py"
     },
