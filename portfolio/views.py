@@ -67,28 +67,42 @@ def dashboard(request):
             # Cache expired, check again
             should_refresh_all = True
     
-    # If any fund needs refresh, refresh only those that need it
+    # If any fund needs refresh, do it in the background instead of blocking this
+    # request. fetch_fund_nav() calls out to external NAV APIs with retry/backoff,
+    # which can add several seconds per fund — unacceptable to wait on before the
+    # dashboard can render, especially on mobile networks. The page renders with
+    # whatever data is already in the DB; the next visit picks up the refreshed NAV.
     if should_refresh_all:
-        # Force refresh by skipping business hours check
+        import threading
         from funds.services import fetch_fund_nav
-        refreshed_count = 0
-        for pf in holdings:
-            should_refresh, reason = should_refresh_nav(pf.fund, latest_business_day=latest_business_day)
-            if should_refresh:
+        portfolio_fund_ids = [pf.pk for pf in holdings]
+
+        def _background_refresh_dashboard(pf_ids, business_day):
+            from portfolio.models import PortfolioFund
+            refreshed = 0;
+            for pf_id in pf_ids:
                 try:
-                    fetch_fund_nav(pf.fund, fetch_history=False)
-                    refreshed_count += 1
-                    logger.info(f"Force refreshed NAV for {pf.fund.scheme_name}: {reason}")
+                    pf_obj = PortfolioFund.objects.select_related('fund').get(pk=pf_id)
+                    needs_refresh, reason = should_refresh_nav(pf_obj.fund, latest_business_day=business_day)
+                    if needs_refresh:
+                        fetch_fund_nav(pf_obj.fund, fetch_history=False)
+                        refreshed += 1
+                        logger.info(f"Background refreshed NAV for {pf_obj.fund.scheme_name}: {reason}")
                 except Exception as e:
-                    logger.warning(f"Force refresh failed for {pf.fund.scheme_name}: {e}")
-        
-        if refreshed_count > 0:
-            messages.info(request, f"Auto-refreshed NAV for {refreshed_count} fund{'s' if refreshed_count > 1 else ''}")
-        
-        # Update session timestamp
+                    logger.warning(f"Background NAV refresh failed for portfolio fund {pf_id}: {e}")
+            if refreshed:
+                logger.info(f"Background dashboard NAV refresh complete: {refreshed} fund(s) updated")
+
+        threading.Thread(
+            target=_background_refresh_dashboard,
+            args=(portfolio_fund_ids, latest_business_day),
+            daemon=True,
+        ).start()
+
+        # Update session timestamp so we don't spawn another refresh thread on the next request
         request.session['last_dashboard_refresh'] = int(time.time())
     
-    # Also run periodic bulk check (existing logic)
+    # Also run periodic bulk check (existing logic), backgrounded for the same reason
     last_check = request.session.get('last_nav_auto_check', 0)
     current_time = int(time.time())
     current_hour = datetime.now().hour
@@ -99,7 +113,21 @@ def dashboard(request):
     if (current_time - last_check > 7200 and  # 2 hours = 7200 seconds
         current_hour >= 19 and current_hour <= 23 and  # 7 PM to 11 PM
         datetime.now().weekday() < 5):  # Monday to Friday
-        bulk_check_and_refresh(request, portfolio, fetch_history=False)
+        import threading
+
+        def _background_bulk_refresh(portfolio_id):
+            from portfolio.models import Portfolio as _Portfolio
+            try:
+                p = _Portfolio.objects.get(pk=portfolio_id)
+                bulk_check_and_refresh(None, p, fetch_history=False)
+            except Exception as e:
+                logger.warning(f"Background bulk NAV check failed: {e}")
+
+        threading.Thread(
+            target=_background_bulk_refresh,
+            args=(portfolio.pk,),
+            daemon=True,
+        ).start()
         request.session['last_nav_auto_check'] = current_time
 
     # Get sorting parameters
