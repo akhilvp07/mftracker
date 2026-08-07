@@ -132,11 +132,7 @@ def dashboard(request):
 
         # Calculate net investment method gain (toggle option)
         try:
-            # Calculate gain using net investment: total_units * (current_nav - average_nav)
-            if nav:
-                gain_cost_basis = pf.total_units * (nav - pf.average_nav)
-            else:
-                gain_cost_basis = Decimal('0')
+            gain_cost_basis = (current - invested) if nav else Decimal('0')
             gain_pct_cost_basis = (gain_cost_basis / invested * 100) if invested > 0 else Decimal('0')
         except Exception as e:
             logger.error(f"Error calculating net investment gain for fund {pf.fund.scheme_name}: {e}")
